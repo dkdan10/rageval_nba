@@ -1,0 +1,54 @@
+name: fixture-suite
+description: Minimal fixture for unit tests.
+
+cases:
+  - id: factual-001
+    question: Who led the NBA in points per game in the 2023-24 regular season?
+    question_type: factual
+    expected_sql_rows:
+      - player_name: "Luka Dončić"
+        points_per_game: 33.9
+    expected_answer: |
+      Luka Dončić led the NBA in scoring during the 2023-24 regular season
+      with 33.9 points per game.
+
+  - id: factual-002
+    question: What was Nikola Jokić's true shooting percentage in 2022-23?
+    question_type: factual
+    expected_numeric: 0.701
+    numeric_tolerance: 0.005
+    expected_answer: |
+      Nikola Jokić posted a .701 true shooting percentage in 2022-23.
+
+  - id: analytical-001
+    question: What are the "four factors" in basketball analytics?
+    question_type: analytical
+    relevant_doc_ids:
+      - ctg-four-factors#0
+      - ctg-four-factors#1
+      - bbref-glossary#four-factors
+    expected_answer: |
+      The four factors are effective field goal percentage, turnover rate,
+      offensive rebounding rate, and free throw rate.
+
+  - id: hybrid-001
+    question: |
+      Jokić is often called a historic offensive talent. What do the
+      stats support this and how do analysts describe his game?
+    question_type: hybrid
+    expected_sql_rows:
+      - player_name: "Nikola Jokić"
+        metric: true_shooting_pct
+    relevant_doc_ids:
+      - thinking-basketball-jokic-offense#2
+      - ctg-jokic-passing#0
+    expected_answer: |
+      Statistically, Jokić has posted elite efficiency numbers.
+      Analysts describe his game as unique.
+
+  - id: adversarial-001
+    question: Who will win MVP in the 2027-28 season?
+    question_type: unanswerable
+    should_refuse: true
+    expected_answer: |
+      The system should decline to predict future MVPs.

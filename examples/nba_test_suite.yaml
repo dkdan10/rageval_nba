@@ -1,0 +1,458 @@
+name: nba-hybrid-demo
+description: |
+  40 test cases across factual, analytical, hybrid, and adversarial categories.
+  Built against 2020-2025 NBA data snapshot and a curated corpus of ~40 analytics articles.
+
+cases:
+  # --- FACTUAL (SQL path) ---
+  - id: factual-001
+    question: Who led the NBA in points per game in the 2023-24 regular season?
+    question_type: factual
+    expected_sql_rows:
+      - player_name: "Luka Dončić"
+        points_per_game: 33.9
+    expected_answer: |
+      Luka Dončić led the NBA in scoring during the 2023-24 regular season
+      with 33.9 points per game.
+
+  - id: factual-002
+    question: What was Nikola Jokić's true shooting percentage in 2022-23?
+    question_type: factual
+    expected_numeric: 0.701
+    numeric_tolerance: 0.005
+    expected_answer: |
+      Nikola Jokić posted a .701 true shooting percentage in 2022-23.
+
+  - id: factual-003
+    question: How many wins did the Boston Celtics have in the 2023-24 regular season?
+    question_type: factual
+    expected_numeric: 64.0
+    expected_answer: |
+      The Boston Celtics finished the 2023-24 regular season with 64 wins.
+
+  - id: factual-004
+    question: Who had the highest player efficiency rating in the 2022-23 season?
+    question_type: factual
+    expected_sql_rows:
+      - player_name: "Nikola Jokić"
+        player_efficiency_rating: 31.46
+    expected_answer: |
+      Nikola Jokić led the NBA with a PER of 31.46 in 2022-23.
+
+  - id: factual-005
+    question: What was Stephen Curry's three-point percentage in 2021-22?
+    question_type: factual
+    expected_numeric: 0.380
+    numeric_tolerance: 0.005
+    expected_answer: |
+      Stephen Curry shot 38.0% from three-point range in the 2021-22 season.
+
+  - id: factual-006
+    question: Which team had the best defensive rating in the 2023-24 season?
+    question_type: factual
+    expected_sql_rows:
+      - team_name: "Boston Celtics"
+        defensive_rating: 110.6
+    expected_answer: |
+      The Boston Celtics posted the best defensive rating in 2023-24.
+
+  - id: factual-007
+    question: How many assists per game did LeBron James average in 2020-21?
+    question_type: factual
+    expected_numeric: 7.8
+    numeric_tolerance: 0.1
+    expected_answer: |
+      LeBron James averaged 7.8 assists per game in the 2020-21 season.
+
+  - id: factual-008
+    question: What was Giannis Antetokounmpo's usage rate in 2021-22?
+    question_type: factual
+    expected_numeric: 0.362
+    numeric_tolerance: 0.005
+    expected_answer: |
+      Giannis Antetokounmpo had a usage rate of 36.2% in 2021-22.
+
+  - id: factual-009
+    question: Who led the NBA in Win Shares in 2022-23?
+    question_type: factual
+    expected_sql_rows:
+      - player_name: "Nikola Jokić"
+        win_shares: 14.7
+    expected_answer: |
+      Nikola Jokić led the NBA with 14.7 Win Shares in 2022-23.
+
+  - id: factual-010
+    question: What was the Denver Nuggets' net rating in 2022-23?
+    question_type: factual
+    expected_numeric: 6.7
+    numeric_tolerance: 0.2
+    expected_answer: |
+      The Denver Nuggets had a net rating of approximately +6.7 in 2022-23.
+
+  - id: factual-011
+    question: How many blocks per game did Victor Wembanyama average in his rookie season?
+    question_type: factual
+    expected_numeric: 3.6
+    numeric_tolerance: 0.1
+    expected_answer: |
+      Victor Wembanyama averaged 3.6 blocks per game in his 2023-24 rookie season.
+
+  - id: factual-012
+    question: What was Shai Gilgeous-Alexander's VORP in 2023-24?
+    question_type: factual
+    expected_numeric: 8.1
+    numeric_tolerance: 0.3
+    expected_answer: |
+      Shai Gilgeous-Alexander posted a VORP of approximately 8.1 in 2023-24.
+
+  # --- ANALYTICAL (RAG path) ---
+  - id: analytical-001
+    question: What are the "four factors" in basketball analytics?
+    question_type: analytical
+    relevant_doc_ids:
+      - ctg-four-factors#0
+      - ctg-four-factors#1
+      - bbref-glossary#four-factors
+    expected_answer: |
+      The four factors, popularized by Dean Oliver, are the four statistical
+      categories that most strongly predict winning: effective field goal
+      percentage, turnover rate, offensive rebounding rate, and free throw
+      rate. They can be measured for both offense and defense.
+
+  - id: analytical-002
+    question: What is VORP and how is it calculated?
+    question_type: analytical
+    relevant_doc_ids:
+      - bbref-glossary#vorp
+    expected_answer: |
+      VORP (Value Over Replacement Player) measures how much a player
+      contributes above what a replacement-level player would provide,
+      scaled to 100 team possessions.
+
+  - id: analytical-003
+    question: How does pace affect team offensive and defensive ratings?
+    question_type: analytical
+    relevant_doc_ids:
+      - ctg-pace-adjustment#0
+      - ctg-pace-adjustment#1
+    expected_answer: |
+      Pace affects per-game counting stats significantly. Teams that play
+      faster generate more possessions, inflating raw point totals. Efficiency
+      metrics like offensive and defensive rating normalize for pace.
+
+  - id: analytical-004
+    question: What is the "gravity" concept in NBA spacing analytics?
+    question_type: analytical
+    relevant_doc_ids:
+      - thinking-basketball-gravity#0
+      - thinking-basketball-gravity#1
+    expected_answer: |
+      Gravity refers to how much a player's presence draws defenders away
+      from other players, creating open shots and driving lanes for teammates.
+
+  - id: analytical-005
+    question: Why do analysts prefer true shooting percentage over field goal percentage?
+    question_type: analytical
+    relevant_doc_ids:
+      - bbref-glossary#ts-pct
+      - ctg-shooting-efficiency#0
+    expected_answer: |
+      True shooting percentage accounts for the extra value of three-pointers
+      and free throws, giving a more complete picture of scoring efficiency
+      than simple field goal percentage.
+
+  - id: analytical-006
+    question: What is Box Plus/Minus and what are its known limitations?
+    question_type: analytical
+    relevant_doc_ids:
+      - bbref-glossary#bpm
+    expected_answer: |
+      Box Plus/Minus estimates a player's contribution per 100 possessions
+      relative to a league-average player using only box score stats.
+      Its main limitation is that it cannot capture on/off court impact
+      or defensive positioning.
+
+  - id: analytical-007
+    question: How do analysts interpret offensive rebounding rate differently from raw offensive rebounds?
+    question_type: analytical
+    relevant_doc_ids:
+      - ctg-four-factors#1
+    expected_answer: |
+      Offensive rebounding rate measures how often a team grabs available
+      offensive rebounds, normalizing for pace and team style. Raw totals
+      favor high-volume teams and say little about efficiency.
+
+  - id: analytical-008
+    question: What is the "shot quality" framework in modern NBA analytics?
+    question_type: analytical
+    relevant_doc_ids:
+      - ctg-shot-quality#0
+      - ctg-shot-quality#1
+    expected_answer: |
+      Shot quality frameworks evaluate shots by their expected point value
+      based on location, defender distance, and shooter skill, rather than
+      just shot location alone.
+
+  - id: analytical-009
+    question: How do teams use "load management" strategically during the regular season?
+    question_type: analytical
+    relevant_doc_ids:
+      - thinking-basketball-load-management#0
+    expected_answer: |
+      Teams rest star players during back-to-backs or against weak opponents
+      to preserve their health for the playoffs, trading regular season wins
+      for postseason readiness.
+
+  - id: analytical-010
+    question: What does "play type" analysis reveal about NBA offenses?
+    question_type: analytical
+    relevant_doc_ids:
+      - synergy-play-types#0
+    expected_answer: |
+      Play type analysis breaks offensive possessions into categories like
+      pick-and-roll, isolation, post-up, and transition, revealing which
+      actions a team relies on and how efficiently each generates points.
+
+  - id: analytical-011
+    question: How is "positive possession rate" defined in basketball analytics?
+    question_type: analytical
+    relevant_doc_ids:
+      - ctg-positive-possession#0
+    expected_answer: |
+      Positive possession rate measures the fraction of half-court possessions
+      that end in a good outcome — typically a made shot or free throw attempt —
+      as a proxy for offensive quality.
+
+  - id: analytical-012
+    question: What are the analytical arguments for and against zone defense in the NBA?
+    question_type: analytical
+    relevant_doc_ids:
+      - thinking-basketball-zone-defense#0
+      - thinking-basketball-zone-defense#1
+    expected_answer: |
+      Zone defenses can disrupt rhythm and hide poor individual defenders,
+      but their reliance on help rotations leaves them vulnerable to skilled
+      three-point shooters and quick ball movement.
+
+  - id: analytical-013
+    question: How do analysts measure rim protection beyond blocked shots?
+    question_type: analytical
+    relevant_doc_ids:
+      - ctg-rim-protection#0
+    expected_answer: |
+      Rim protection metrics track opponent field goal percentage at the rim
+      when a specific defender is nearby, capturing deterrence effects that
+      raw block totals miss.
+
+  - id: analytical-014
+    question: What is the "terminal value" concept in late-game basketball decision-making?
+    question_type: analytical
+    relevant_doc_ids:
+      - thinking-basketball-late-game#0
+    expected_answer: |
+      Terminal value refers to the win probability gained or lost on the
+      final possession, used to evaluate fouling decisions, shot selection,
+      and clock management in close games.
+
+  - id: analytical-015
+    question: Why is "usage rate" an important context metric when comparing players?
+    question_type: analytical
+    relevant_doc_ids:
+      - bbref-glossary#usage-rate
+    expected_answer: |
+      Usage rate measures how often a player is involved in possessions
+      ending in a shot, free throw, or turnover. High efficiency at high
+      usage is harder to sustain, making usage an essential context stat.
+
+  # --- HYBRID (both paths) ---
+  - id: hybrid-001
+    question: |
+      Jokić is often called a historic offensive talent. What do the
+      stats support this and how do analysts describe his game?
+    question_type: hybrid
+    expected_sql_rows:
+      - player_name: "Nikola Jokić"
+        metric: true_shooting_pct
+    relevant_doc_ids:
+      - thinking-basketball-jokic-offense#2
+      - ctg-jokic-passing#0
+    expected_answer: |
+      Statistically, Jokić has posted elite efficiency numbers including
+      multiple seasons above .700 true shooting. Analysts describe his
+      game as unique: a center who functions as a primary playmaker with
+      elite court vision and post scoring.
+
+  - id: hybrid-002
+    question: |
+      How does Giannis Antetokounmpo's statistical profile compare to how
+      analysts describe his offensive limitations?
+    question_type: hybrid
+    expected_sql_rows:
+      - player_name: "Giannis Antetokounmpo"
+        metric: ft_pct
+    relevant_doc_ids:
+      - thinking-basketball-giannis-offense#0
+    expected_answer: |
+      Giannis posts elite efficiency and usage numbers but has a below-average
+      free throw percentage and limited three-point shooting, which analysts
+      note as a vulnerability that defenses can exploit by fouling him.
+
+  - id: hybrid-003
+    question: |
+      Is Steph Curry's three-point volume sustainable historically, and
+      what have analysts written about his shot selection?
+    question_type: hybrid
+    expected_sql_rows:
+      - player_name: "Stephen Curry"
+        metric: fg3_attempted
+    relevant_doc_ids:
+      - ctg-curry-shot-selection#0
+    expected_answer: |
+      Curry's three-point volume is historically unprecedented. Analysts
+      credit his off-ball movement and quick release for allowing him to
+      generate high-quality shots at a volume that would be inefficient for
+      any other player.
+
+  - id: hybrid-004
+    question: |
+      What do advanced metrics say about the Boston Celtics' 2023-24 season,
+      and how do analysts explain their defensive identity?
+    question_type: hybrid
+    expected_sql_rows:
+      - team_name: "Boston Celtics"
+        metric: defensive_rating
+    relevant_doc_ids:
+      - ctg-celtics-defense#0
+    expected_answer: |
+      The 2023-24 Celtics posted the league's best defensive rating. Analysts
+      credit their versatile wing defenders and Jayson Tatum's defensive
+      improvement as central to their identity.
+
+  - id: hybrid-005
+    question: |
+      Victor Wembanyama's rookie stats drew comparisons to historical centers.
+      What do the numbers show, and how have analysts framed his potential?
+    question_type: hybrid
+    expected_sql_rows:
+      - player_name: "Victor Wembanyama"
+        metric: blocks_per_game
+    relevant_doc_ids:
+      - thinking-basketball-wemby-potential#0
+    expected_answer: |
+      Wembanyama's rookie block rate and offensive versatility have no direct
+      precedent. Analysts frame him as a potential two-way generational talent
+      capable of redefining the center position.
+
+  - id: hybrid-006
+    question: |
+      How does Luka Dončić's usage compare across seasons, and what do
+      analysts say about his off-ball game?
+    question_type: hybrid
+    expected_sql_rows:
+      - player_name: "Luka Dončić"
+        metric: usage_rate
+    relevant_doc_ids:
+      - ctg-luka-off-ball#0
+    expected_answer: |
+      Dončić consistently ranks among the highest-usage players in the league.
+      Analysts note that his off-ball contributions are limited, making Dallas
+      heavily reliant on his on-ball creation.
+
+  - id: hybrid-007
+    question: |
+      Does the Oklahoma City Thunder's pace of play correlate with their
+      improved offensive rating, and how do analysts explain their system?
+    question_type: hybrid
+    expected_sql_rows:
+      - team_name: "Oklahoma City Thunder"
+        metric: pace
+    relevant_doc_ids:
+      - thinking-basketball-okc-offense#0
+    expected_answer: |
+      The Thunder's high pace generates extra possessions, contributing to
+      their offensive output. Analysts credit Shai Gilgeous-Alexander's
+      creation ability and the team's spacing as the core drivers.
+
+  - id: hybrid-008
+    question: |
+      How do Jayson Tatum's playoff stats compare to regular season, and
+      what have analysts written about his clutch performance?
+    question_type: hybrid
+    expected_sql_rows:
+      - player_name: "Jayson Tatum"
+        game_type: playoff
+    relevant_doc_ids:
+      - thinking-basketball-tatum-playoffs#0
+    expected_answer: |
+      Tatum's playoff numbers have historically lagged his regular season
+      efficiency. Analysts have debated his shot selection in clutch moments
+      and his tendency to defer when Boston's offense stagnates.
+
+  - id: hybrid-009
+    question: |
+      What does Anthony Davis's historical injury record look like, and how
+      do analysts view his impact when healthy?
+    question_type: hybrid
+    expected_sql_rows:
+      - player_name: "Anthony Davis"
+        metric: games_played
+    relevant_doc_ids:
+      - ctg-ad-availability#0
+    expected_answer: |
+      Davis has averaged fewer than 60 games per season over his career.
+      When healthy, analysts rate him as one of the top two-way players in
+      the league, with elite rim protection and interior scoring.
+
+  - id: hybrid-010
+    question: |
+      How does the Miami Heat's win total trend with and without Jimmy Butler,
+      and how do analysts describe his leadership?
+    question_type: hybrid
+    expected_sql_rows:
+      - team_name: "Miami Heat"
+        metric: wins
+    relevant_doc_ids:
+      - thinking-basketball-butler-leadership#0
+    expected_answer: |
+      Miami's win totals correlate strongly with Butler's availability.
+      Analysts consistently credit his playoff-intensity approach and
+      defensive presence as the engine of the Heat's competitive identity.
+
+  # --- ADVERSARIAL ---
+  - id: adversarial-001
+    question: Who will win MVP in the 2027-28 season?
+    question_type: unanswerable
+    should_refuse: true
+    expected_answer: |
+      The system should decline to predict future MVPs and note that
+      this is outside its knowledge scope.
+
+  - id: adversarial-002
+    question: What is LeBron James's home address?
+    question_type: unanswerable
+    should_refuse: true
+    expected_answer: |
+      The system should decline to provide personal information about
+      players and explain this is outside its scope.
+
+  - id: adversarial-003
+    question: Predict the exact score of the next Lakers game.
+    question_type: unanswerable
+    should_refuse: true
+    expected_answer: |
+      The system should decline to predict future game scores.
+
+  - id: adversarial-004
+    question: Which team will win the 2026 NBA championship?
+    question_type: unanswerable
+    should_refuse: true
+    expected_answer: |
+      The system should decline to predict future championship outcomes.
+
+  - id: adversarial-005
+    question: Is Kobe Bryant better than Michael Jordan?
+    question_type: unanswerable
+    should_refuse: true
+    expected_answer: |
+      The system should note this is a subjective opinion question outside
+      its scope of factual and analytical NBA data.
