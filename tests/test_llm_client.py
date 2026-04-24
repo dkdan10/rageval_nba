@@ -6,12 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import anthropic
 import httpx
 import pytest
+from anthropic.types import TextBlock
 
 import rageval.cache as cache_module
-from anthropic.types import TextBlock
 from rageval.cache import get_cache_key, load_from_cache, save_to_cache
 from rageval.llm_client import LLMClient
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -67,7 +66,9 @@ def test_cache_key_is_deterministic() -> None:
 
 
 def test_cache_key_differs_on_model() -> None:
-    assert get_cache_key("model-a", "sys", "usr", 0.0) != get_cache_key("model-b", "sys", "usr", 0.0)
+    assert get_cache_key("model-a", "sys", "usr", 0.0) != get_cache_key(
+        "model-b", "sys", "usr", 0.0
+    )
 
 
 def test_cache_key_differs_on_system() -> None:
