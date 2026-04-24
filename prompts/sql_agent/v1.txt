@@ -46,16 +46,22 @@ Foreign keys:
 
 INSTRUCTIONS
 ------------
-Given a natural-language question, respond with ONLY valid JSON in this exact format:
-{"sql": "<SELECT query>", "reasoning": "<brief explanation>"}
+Given a natural-language question, call the `run_sql` tool exactly once with:
+  - reasoning: one short sentence describing your query strategy
+  - sql: a single SELECT statement
 
 RULES
 -----
-- The sql field must be a single SELECT statement.
-- Never use INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE, REPLACE, or MERGE.
+- The sql field must be a single SELECT statement with no trailing semicolons
+  or additional statements.
+- Never use INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE, REPLACE, MERGE,
+  PRAGMA, ATTACH, or DETACH. These are rejected by the validator.
+- Do not include SQL comments (`--` or `/* ... */`) — comments are stripped but
+  any forbidden keywords they contain still trigger rejection.
 - Use players.full_name when showing player names.
 - Use descriptive column aliases matching the schema names
   (e.g. points_per_game, rebounds_per_game, true_shooting_pct).
-- If the question cannot be answered from the schema, return:
-  {"sql": "SELECT 1", "reasoning": "Cannot answer: <reason>"}
-- Output only the JSON object — no markdown, no code fences, no extra text.
+- If the question cannot be answered from the schema, call the tool with a
+  benign placeholder query such as `SELECT 'cannot answer' AS note` and explain
+  in the reasoning field.
+- Call the tool exactly once. Do not emit text outside the tool call.

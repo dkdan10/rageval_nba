@@ -162,6 +162,38 @@ def test_ndcg_at_k_perfect_multiple_relevant() -> None:
     assert ndcg_at_k(["a", "b", "c"], ["a", "b", "c"], 3) == pytest.approx(1.0)
 
 
+def test_ndcg_gain_choice_is_binary_equivalent_to_2_pow_rel_minus_1() -> None:
+    """The plan specifies the `2^rel - 1` (Burges) gain function.
+
+    Our relevance labels are binary: rel ∈ {0, 1}. Under that encoding:
+      2^0 - 1 = 0
+      2^1 - 1 = 1
+    which is exactly what our implementation uses (`1.0 if in set else 0.0`).
+    This test encodes the equivalence so a reviewer can see the choice is
+    deliberate.
+    """
+    def burges_gain(rel: int) -> float:
+        return float((2 ** rel) - 1)
+
+    assert burges_gain(0) == 0.0
+    assert burges_gain(1) == 1.0
+    # Functionally equivalent to our implementation for binary relevance.
+    retrieved = ["a", "x", "b"]
+    relevant = ["a", "b"]
+    our_result = ndcg_at_k(retrieved, relevant, 3)
+
+    # Recompute using the explicit 2^rel-1 formula.
+    relevant_set = set(relevant)
+    dcg_burges = sum(
+        burges_gain(1 if d in relevant_set else 0) / math.log2(i + 2)
+        for i, d in enumerate(retrieved)
+    )
+    idcg_burges = sum(
+        burges_gain(1) / math.log2(i + 2) for i in range(min(len(relevant), 3))
+    )
+    assert our_result == pytest.approx(dcg_burges / idcg_burges)
+
+
 # ── Metric wrapper classes ────────────────────────────────────────────────────
 
 

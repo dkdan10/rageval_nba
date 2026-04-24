@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import anthropic
 import httpx
 import pytest
-from anthropic.types import TextBlock
+from anthropic.types import TextBlock, ToolUseBlock
 
 import rageval.cache as cache_module
 from rageval.cache import get_cache_key, load_from_cache, save_to_cache
@@ -22,6 +22,26 @@ def _fake_message(
 ) -> MagicMock:
     msg = MagicMock()
     msg.content = [TextBlock(type="text", text=text)]
+    msg.usage.input_tokens = input_tokens
+    msg.usage.output_tokens = output_tokens
+    return msg
+
+
+def _fake_tooluse_message(
+    tool_name: str,
+    tool_input: dict[str, object],
+    text: str = "",
+    input_tokens: int = 100,
+    output_tokens: int = 50,
+) -> MagicMock:
+    msg = MagicMock()
+    blocks: list[object] = []
+    if text:
+        blocks.append(TextBlock(type="text", text=text))
+    blocks.append(
+        ToolUseBlock(type="tool_use", id="tool_1", name=tool_name, input=tool_input)
+    )
+    msg.content = blocks
     msg.usage.input_tokens = input_tokens
     msg.usage.output_tokens = output_tokens
     return msg
@@ -386,4 +406,104 @@ async def test_different_tools_produce_different_cache_keys(
     tools_b = [{"name": "tool_b", "input_schema": {"type": "object"}}]
     await LLMClient().complete("sys", "usr", "claude-sonnet-4-6", tools=tools_a)
     await LLMClient().complete("sys", "usr", "claude-sonnet-4-6", tools=tools_b)
+    assert mock_create.call_count == 2
+
+
+# ── LLMClient: tool_use blocks in response ───────────────────────────────────
+
+
+async def test_tool_use_block_exposed_in_tool_calls(
+    isolated_cache: Path, mock_create: AsyncMock
+) -> None:
+    mock_create.return_value = _fake_tooluse_message(
+        tool_name="classify_question",
+        tool_input={"category": "factual", "reasoning": "ok"},
+    )
+    result = await LLMClient().complete(
+        "sys", "usr", "claude-sonnet-4-6", tools=_SAMPLE_TOOLS
+    )
+    assert result["content"] == ""
+    assert isinstance(result["tool_calls"], list)
+    assert len(result["tool_calls"]) == 1
+    call = result["tool_calls"][0]
+    assert call["name"] == "classify_question"
+    assert call["input"]["category"] == "factual"
+    assert call["id"] == "tool_1"
+
+
+async def test_text_and_tool_use_both_exposed(
+    isolated_cache: Path, mock_create: AsyncMock
+) -> None:
+    mock_create.return_value = _fake_tooluse_message(
+        tool_name="t",
+        tool_input={"x": 1},
+        text="preamble",
+    )
+    result = await LLMClient().complete(
+        "sys", "usr", "claude-sonnet-4-6", tools=_SAMPLE_TOOLS
+    )
+    assert result["content"] == "preamble"
+    assert len(result["tool_calls"]) == 1
+
+
+async def test_text_only_response_has_empty_tool_calls(
+    isolated_cache: Path, mock_create: AsyncMock
+) -> None:
+    mock_create.return_value = _fake_message(text="hello")
+    result = await LLMClient().complete("sys", "usr", "claude-sonnet-4-6")
+    assert result["content"] == "hello"
+    assert result["tool_calls"] == []
+
+
+async def test_tool_calls_round_trip_through_cache(
+    isolated_cache: Path, mock_create: AsyncMock
+) -> None:
+    mock_create.return_value = _fake_tooluse_message(
+        tool_name="x",
+        tool_input={"a": 1},
+    )
+    first = await LLMClient().complete(
+        "sys", "usr", "claude-sonnet-4-6", tools=_SAMPLE_TOOLS
+    )
+    second = await LLMClient().complete(
+        "sys", "usr", "claude-sonnet-4-6", tools=_SAMPLE_TOOLS
+    )
+    assert second["cached"] is True
+    assert second["tool_calls"] == first["tool_calls"]
+
+
+async def test_tool_choice_passed_to_api(
+    isolated_cache: Path, mock_create: AsyncMock
+) -> None:
+    mock_create.return_value = _fake_tooluse_message(
+        tool_name="x", tool_input={"a": 1}
+    )
+    await LLMClient().complete(
+        "sys",
+        "usr",
+        "claude-sonnet-4-6",
+        tools=_SAMPLE_TOOLS,
+        tool_choice={"type": "tool", "name": "x"},
+    )
+    call_kwargs = mock_create.call_args.kwargs
+    assert call_kwargs["tool_choice"] == {"type": "tool", "name": "x"}
+
+
+async def test_tool_choice_affects_cache_key(
+    isolated_cache: Path, mock_create: AsyncMock
+) -> None:
+    mock_create.return_value = _fake_tooluse_message(
+        tool_name="x", tool_input={"a": 1}
+    )
+    await LLMClient().complete(
+        "sys", "usr", "claude-sonnet-4-6", tools=_SAMPLE_TOOLS
+    )
+    await LLMClient().complete(
+        "sys",
+        "usr",
+        "claude-sonnet-4-6",
+        tools=_SAMPLE_TOOLS,
+        tool_choice={"type": "tool", "name": "x"},
+    )
+    # Different tool_choice → different cache key → second call hits API again.
     assert mock_create.call_count == 2

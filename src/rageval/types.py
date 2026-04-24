@@ -7,7 +7,7 @@ import yaml
 from pydantic import BaseModel, Field, ValidationError
 
 
-class QuestionType(Enum):
+class QuestionType(str, Enum):  # noqa: UP042 — spec calls for `str, Enum` (see PROJECT_PLAN.md)
     """Routing category for a test case."""
 
     FACTUAL = "factual"

@@ -11,14 +11,11 @@ You will be given:
 - Sources: SQL query results and/or retrieved documents
 - Answer: the answer to evaluate
 
-Respond with JSON only. No markdown. No code fences. No explanation outside the JSON object.
+Record your judgment by calling the `record_faithfulness` tool exactly once with:
+  - reasoning: brief explanation of your judgment
+  - faithful: true or false
+  - unsupported_claims: list of specific claims not supported by the sources
 
-Required output schema:
-{
-  "reasoning": "brief explanation of your judgment",
-  "faithful": true or false,
-  "unsupported_claims": ["list of specific claims not supported by sources"]
-}
-
-If the answer is faithful, set faithful to true and unsupported_claims to an empty list.
-If the answer is unfaithful, set faithful to false and list each unsupported claim as a separate string.
+If the answer is faithful, set faithful=true and unsupported_claims=[].
+If the answer is unfaithful, set faithful=false and list each unsupported claim.
+Do not emit text outside the tool call.

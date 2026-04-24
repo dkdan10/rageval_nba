@@ -14,14 +14,10 @@ You will be given:
 - Candidate Answer: the answer being evaluated
 - Reference Answer: the ground-truth or expected answer
 
-Respond with JSON only. No markdown. No code fences. No explanation outside the JSON object.
+Record your judgment by calling the `record_correctness` tool exactly once with:
+  - reasoning: brief explanation of your score
+  - score: an integer 0, 1, 2, 3, or 4
+  - errors: list of specific errors or omissions in the candidate answer
 
-Required output schema:
-{
-  "reasoning": "brief explanation of your score",
-  "score": 0, 1, 2, 3, or 4,
-  "errors": ["list of specific errors or omissions in the candidate answer"]
-}
-
-The score field must be an integer: 0, 1, 2, 3, or 4.
-If there are no errors, set errors to an empty list.
+If there are no errors, set errors=[].
+Do not emit text outside the tool call.

@@ -8,7 +8,10 @@ import pytest
 import yaml
 
 from rageval.metrics.judge import (
+    _CORRECTNESS_TOOL,
+    _FAITHFULNESS_TOOL,
     _MODEL,
+    _RELEVANCE_TOOL,
     CorrectnessJudge,
     FaithfulnessJudge,
     RelevanceJudge,
@@ -452,3 +455,168 @@ def test_routing_calibration_has_correct_and_incorrect() -> None:
     correct_flags: list[Any] = [c["correct"] for c in data["cases"]]
     assert True in correct_flags
     assert False in correct_flags
+
+
+# ===========================================================================
+# Tool-use structured output tests
+# ===========================================================================
+
+
+def _tool_response(tool_name: str, inp: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "content": "",
+        "tool_calls": [{"id": "t1", "name": tool_name, "input": inp}],
+    }
+
+
+@pytest.mark.asyncio
+async def test_faithfulness_accepts_tool_use_response() -> None:
+    llm = MagicMock()
+    llm.complete = AsyncMock(
+        return_value=_tool_response(
+            _FAITHFULNESS_TOOL["name"],
+            {"reasoning": "ok", "faithful": True, "unsupported_claims": []},
+        )
+    )
+    judge = FaithfulnessJudge(llm=llm)
+    result = await judge.evaluate(_make_case(), _make_response())
+    assert result.value == 1.0
+    assert result.error is None
+
+
+@pytest.mark.asyncio
+async def test_faithfulness_passes_tool_schema() -> None:
+    llm = MagicMock()
+    llm.complete = AsyncMock(
+        return_value=_tool_response(
+            _FAITHFULNESS_TOOL["name"],
+            {"reasoning": "ok", "faithful": True, "unsupported_claims": []},
+        )
+    )
+    judge = FaithfulnessJudge(llm=llm)
+    await judge.evaluate(_make_case(), _make_response())
+    kwargs = llm.complete.call_args.kwargs
+    assert kwargs["tools"] == [_FAITHFULNESS_TOOL]
+    assert kwargs["tool_choice"] == {"type": "tool", "name": _FAITHFULNESS_TOOL["name"]}
+
+
+@pytest.mark.asyncio
+async def test_relevance_accepts_tool_use_response() -> None:
+    llm = MagicMock()
+    llm.complete = AsyncMock(
+        return_value=_tool_response(
+            _RELEVANCE_TOOL["name"],
+            {"reasoning": "ok", "relevant": False, "irrelevant_parts": ["x"]},
+        )
+    )
+    judge = RelevanceJudge(llm=llm)
+    result = await judge.evaluate(_make_case(), _make_response())
+    assert result.value == 0.0
+    assert result.details["irrelevant_parts"] == ["x"]
+
+
+@pytest.mark.asyncio
+async def test_correctness_accepts_tool_use_response() -> None:
+    case = _make_case(expected_answer="Luka led.")
+    llm = MagicMock()
+    llm.complete = AsyncMock(
+        return_value=_tool_response(
+            _CORRECTNESS_TOOL["name"],
+            {"reasoning": "ok", "score": 4, "errors": []},
+        )
+    )
+    judge = CorrectnessJudge(llm=llm)
+    result = await judge.evaluate(case, _make_response())
+    assert result.value == pytest.approx(1.0)
+    assert result.details["forward_score"] == 4
+    assert result.details["swapped_score"] == 4
+
+
+@pytest.mark.asyncio
+async def test_correctness_disagreement_flag_set_when_threshold_met() -> None:
+    case = _make_case(expected_answer="Luka led.")
+    llm = MagicMock()
+    llm.complete = AsyncMock(
+        side_effect=[
+            _tool_response(
+                _CORRECTNESS_TOOL["name"],
+                {"reasoning": "fwd", "score": 4, "errors": []},
+            ),
+            _tool_response(
+                _CORRECTNESS_TOOL["name"],
+                {"reasoning": "swp", "score": 1, "errors": ["x"]},
+            ),
+        ]
+    )
+    judge = CorrectnessJudge(llm=llm)
+    result = await judge.evaluate(case, _make_response())
+    assert result.details["disagreement"] == 3
+    assert result.details["disagreement_flag"] is True
+
+
+@pytest.mark.asyncio
+async def test_correctness_disagreement_flag_unset_when_close() -> None:
+    case = _make_case(expected_answer="Luka led.")
+    llm = MagicMock()
+    llm.complete = AsyncMock(
+        side_effect=[
+            _tool_response(
+                _CORRECTNESS_TOOL["name"],
+                {"reasoning": "fwd", "score": 4, "errors": []},
+            ),
+            _tool_response(
+                _CORRECTNESS_TOOL["name"],
+                {"reasoning": "swp", "score": 3, "errors": []},
+            ),
+        ]
+    )
+    judge = CorrectnessJudge(llm=llm)
+    result = await judge.evaluate(case, _make_response())
+    assert result.details["disagreement"] == 1
+    assert result.details["disagreement_flag"] is False
+
+
+@pytest.mark.asyncio
+async def test_faithfulness_rejects_malformed_tool_input() -> None:
+    # score field missing / type-error → the judge should still report an error
+    llm = MagicMock()
+    llm.complete = AsyncMock(
+        return_value=_tool_response(
+            _FAITHFULNESS_TOOL["name"],
+            {"reasoning": "bad", "faithful": "not-a-bool", "unsupported_claims": []},
+        )
+    )
+    judge = FaithfulnessJudge(llm=llm)
+    result = await judge.evaluate(_make_case(), _make_response())
+    assert result.value == 0.0
+    assert result.error is not None
+
+
+@pytest.mark.asyncio
+async def test_correctness_rejects_malformed_tool_input() -> None:
+    case = _make_case(expected_answer="Luka led.")
+    llm = MagicMock()
+    llm.complete = AsyncMock(
+        return_value=_tool_response(
+            _CORRECTNESS_TOOL["name"],
+            {"reasoning": "bad", "score": 7, "errors": []},
+        )
+    )
+    judge = CorrectnessJudge(llm=llm)
+    result = await judge.evaluate(case, _make_response())
+    assert result.value == 0.0
+    assert result.error is not None
+
+
+# ===========================================================================
+# Routing judge: document the deterministic design
+# ===========================================================================
+
+
+def test_routing_prompt_file_is_documented_as_unused() -> None:
+    """Routing judge is deterministic. The prompt file is a placeholder."""
+    path = Path(__file__).parent.parent / "prompts" / "judges" / "routing" / "v1.txt"
+    assert path.exists()
+    content = path.read_text(encoding="utf-8")
+    # The file must explicitly document that it is not currently wired up.
+    assert "not currently used" in content.lower() or "future use" in content.lower()

@@ -3,10 +3,22 @@
 Usage:
     uv run python scripts/calibrate_judge.py [all|faithfulness|relevance|correctness|routing]
 
-Prints per-judge agreement rates and exits non-zero if any judge is below 80%.
+This script drives each judge against its calibration fixture (10 cases per
+judge) and prints agreement rates. By default it uses ``LLMClient()`` which
+requires ``ANTHROPIC_API_KEY`` in the environment. Responses are cached in
+``.rageval_cache/`` so repeated runs are fast and cheap.
+
+Exits non-zero if any judge falls below the ``--threshold`` (default 0.8).
+
+For offline / CI usage, ``calibrate_*`` functions accept a pre-configured
+``LLMClient`` (or any mock) via the ``llm`` kwarg — see ``tests/test_calibrate.py``.
 """
 
+from __future__ import annotations
+
+import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -23,7 +35,7 @@ from rageval.metrics.judge import (
 from rageval.types import Document, QuestionType, RAGResponse, TestCase
 
 _FIXTURES_DIR = Path(__file__).parents[1] / "tests" / "fixtures"
-_THRESHOLD = 0.8
+_DEFAULT_THRESHOLD = 0.8
 _ALL_JUDGES = frozenset({"faithfulness", "relevance", "correctness", "routing"})
 
 
@@ -120,17 +132,35 @@ async def calibrate_routing() -> float:
     return binary_agreement(verdicts, labels)
 
 
-async def run(judges: list[str]) -> bool:
-    """Run calibration for the requested judges. Returns True if all pass threshold."""
+async def run(judges: list[str], threshold: float = _DEFAULT_THRESHOLD) -> bool:
+    """Run calibration for *judges*. Returns True if all meet *threshold*.
+
+    LLM-backed judges share one ``LLMClient`` so the on-disk cache is reused
+    across runs. If ``ANTHROPIC_API_KEY`` is not set, warns and runs only the
+    deterministic routing judge.
+    """
     to_run = _ALL_JUDGES if "all" in judges else _ALL_JUDGES & set(judges)
+
+    need_llm = bool(to_run & {"faithfulness", "relevance", "correctness"})
+    llm: LLMClient | None = None
+    if need_llm:
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            print(
+                "WARNING: ANTHROPIC_API_KEY is not set. "
+                "Skipping LLM-backed judges (faithfulness, relevance, correctness).",
+                file=sys.stderr,
+            )
+            to_run = to_run - {"faithfulness", "relevance", "correctness"}
+        else:
+            llm = LLMClient()
 
     results: dict[str, float] = {}
     if "faithfulness" in to_run:
-        results["faithfulness"] = await calibrate_faithfulness()
+        results["faithfulness"] = await calibrate_faithfulness(llm=llm)
     if "relevance" in to_run:
-        results["relevance"] = await calibrate_relevance()
+        results["relevance"] = await calibrate_relevance(llm=llm)
     if "correctness" in to_run:
-        results["correctness"] = await calibrate_correctness()
+        results["correctness"] = await calibrate_correctness(llm=llm)
     if "routing" in to_run:
         results["routing"] = await calibrate_routing()
 
@@ -141,15 +171,39 @@ async def run(judges: list[str]) -> bool:
     for name, rate in sorted(results.items()):
         n = len(load_fixture(name))
         hits = round(rate * n)
-        status = "PASS" if rate >= _THRESHOLD else "FAIL"
+        status = "PASS" if rate >= threshold else "FAIL"
         print(f"[{status}] {name}: {rate:.0%} ({hits}/{n})")
 
-    return all(r >= _THRESHOLD for r in results.values())
+    if llm is not None:
+        print(
+            f"Total LLM cost: ${llm.total_cost_usd:.4f} "
+            f"({llm.total_input_tokens} in / {llm.total_output_tokens} out tokens)",
+            file=sys.stderr,
+        )
+
+    return all(r >= threshold for r in results.values())
+
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Run judge calibration against fixtures.")
+    p.add_argument(
+        "judges",
+        nargs="*",
+        default=["all"],
+        help="Which judges to calibrate. Default: all.",
+    )
+    p.add_argument(
+        "--threshold",
+        type=float,
+        default=_DEFAULT_THRESHOLD,
+        help=f"Agreement threshold (default {_DEFAULT_THRESHOLD}).",
+    )
+    return p.parse_args(argv)
 
 
 def main() -> None:
-    args = sys.argv[1:] if len(sys.argv) > 1 else ["all"]
-    ok = asyncio.run(run(args))
+    args = _parse_args(sys.argv[1:])
+    ok = asyncio.run(run(args.judges, threshold=args.threshold))
     if not ok:
         sys.exit(1)
 

@@ -1,3 +1,12 @@
+"""LLM-as-judge metrics (Milestones 4 & 5).
+
+All LLM-backed judges use Anthropic tool-use for structured output. The raw
+JSON-text fallback is preserved only so that existing mocked tests that return
+`{"content": "<json>"}` continue to work.
+
+Position-swap mitigation is implemented for CorrectnessJudge.
+"""
+
 import json
 from pathlib import Path
 from typing import Any
@@ -7,6 +16,53 @@ from rageval.types import MetricResult, QuestionType, RAGResponse, TestCase
 
 _MODEL = "claude-haiku-4-5-20251001"
 _JUDGES_DIR = Path(__file__).parents[3] / "prompts" / "judges"
+
+
+# ---------------------------------------------------------------------------
+# Tool schemas (one per judge)
+# ---------------------------------------------------------------------------
+
+_FAITHFULNESS_TOOL: dict[str, Any] = {
+    "name": "record_faithfulness",
+    "description": "Record a faithfulness judgment for an answer against its sources.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "reasoning": {"type": "string"},
+            "faithful": {"type": "boolean"},
+            "unsupported_claims": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["reasoning", "faithful", "unsupported_claims"],
+    },
+}
+
+_RELEVANCE_TOOL: dict[str, Any] = {
+    "name": "record_relevance",
+    "description": "Record whether the answer directly addresses the question.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "reasoning": {"type": "string"},
+            "relevant": {"type": "boolean"},
+            "irrelevant_parts": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["reasoning", "relevant", "irrelevant_parts"],
+    },
+}
+
+_CORRECTNESS_TOOL: dict[str, Any] = {
+    "name": "record_correctness",
+    "description": "Record a 0-4 correctness score comparing candidate to reference.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "reasoning": {"type": "string"},
+            "score": {"type": "integer", "enum": [0, 1, 2, 3, 4]},
+            "errors": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["reasoning", "score", "errors"],
+    },
+}
 
 
 def _load_prompt(judge: str) -> str:
@@ -23,26 +79,33 @@ def _build_sources(response: RAGResponse) -> str:
     return "\n\n".join(parts) if parts else "(none)"
 
 
-def _parse_json_obj(
-    content: str, metric_name: str, case_id: str
-) -> tuple[dict[str, Any] | None, MetricResult | None]:
-    try:
-        data: Any = json.loads(content)
-    except json.JSONDecodeError as exc:
-        return None, MetricResult(
-            metric_name=metric_name,
-            case_id=case_id,
-            value=0.0,
-            error=f"Invalid JSON from judge: {exc}",
-        )
-    if not isinstance(data, dict):
-        return None, MetricResult(
-            metric_name=metric_name,
-            case_id=case_id,
-            value=0.0,
-            error="Judge output is not a JSON object",
-        )
-    return data, None
+def _extract_tool_input(
+    response: dict[str, Any], tool_name: str
+) -> tuple[dict[str, Any] | None, str]:
+    """Return (tool input dict, error string).
+
+    First checks `tool_calls`. If none present, falls back to parsing JSON
+    from the `content` text (for backward compatibility with mocked tests).
+    """
+    tool_calls: list[dict[str, Any]] = response.get("tool_calls") or []
+    for call in tool_calls:
+        if call.get("name") != tool_name:
+            continue
+        inp = call.get("input")
+        if isinstance(inp, dict):
+            return inp, ""
+
+    content = response.get("content")
+    if isinstance(content, str) and content.strip():
+        try:
+            parsed = json.loads(content)
+        except (json.JSONDecodeError, ValueError) as exc:
+            return None, f"Invalid JSON from judge: {exc}"
+        if isinstance(parsed, dict):
+            return parsed, ""
+        return None, "Judge output is not a JSON object"
+
+    return None, "Judge did not return a tool call or parsable JSON content"
 
 
 def _require_bool(
@@ -71,15 +134,19 @@ def _require_bool(
 # ---------------------------------------------------------------------------
 
 
-def _parse_faithfulness(case_id: str, content: str) -> MetricResult:
-    data, err = _parse_json_obj(content, "faithfulness", case_id)
-    if err is not None:
-        return err
+def _parse_faithfulness(case_id: str, response: dict[str, Any]) -> MetricResult:
+    data, err = _extract_tool_input(response, _FAITHFULNESS_TOOL["name"])
+    if data is None:
+        return MetricResult(
+            metric_name="faithfulness",
+            case_id=case_id,
+            value=0.0,
+            error=err or "No tool input found",
+        )
 
-    assert data is not None
-    faithful, err = _require_bool(data, "faithful", "faithfulness", case_id)
-    if err is not None:
-        return err
+    faithful, berr = _require_bool(data, "faithful", "faithfulness", case_id)
+    if berr is not None:
+        return berr
 
     reasoning: str = str(data.get("reasoning", ""))
     raw_claims: Any = data.get("unsupported_claims", [])
@@ -113,8 +180,10 @@ class FaithfulnessJudge:
             user=user,
             model=_MODEL,
             temperature=0.0,
+            tools=[_FAITHFULNESS_TOOL],
+            tool_choice={"type": "tool", "name": _FAITHFULNESS_TOOL["name"]},
         )
-        return _parse_faithfulness(case.id, str(result.get("content", "")))
+        return _parse_faithfulness(case.id, result)
 
 
 # ---------------------------------------------------------------------------
@@ -122,15 +191,19 @@ class FaithfulnessJudge:
 # ---------------------------------------------------------------------------
 
 
-def _parse_relevance(case_id: str, content: str) -> MetricResult:
-    data, err = _parse_json_obj(content, "relevance", case_id)
-    if err is not None:
-        return err
+def _parse_relevance(case_id: str, response: dict[str, Any]) -> MetricResult:
+    data, err = _extract_tool_input(response, _RELEVANCE_TOOL["name"])
+    if data is None:
+        return MetricResult(
+            metric_name="relevance",
+            case_id=case_id,
+            value=0.0,
+            error=err or "No tool input found",
+        )
 
-    assert data is not None
-    relevant, err = _require_bool(data, "relevant", "relevance", case_id)
-    if err is not None:
-        return err
+    relevant, berr = _require_bool(data, "relevant", "relevance", case_id)
+    if berr is not None:
+        return berr
 
     reasoning: str = str(data.get("reasoning", ""))
     raw_parts: Any = data.get("irrelevant_parts", [])
@@ -159,8 +232,10 @@ class RelevanceJudge:
             user=user,
             model=_MODEL,
             temperature=0.0,
+            tools=[_RELEVANCE_TOOL],
+            tool_choice={"type": "tool", "name": _RELEVANCE_TOOL["name"]},
         )
-        return _parse_relevance(case.id, str(result.get("content", "")))
+        return _parse_relevance(case.id, result)
 
 
 # ---------------------------------------------------------------------------
@@ -169,13 +244,17 @@ class RelevanceJudge:
 
 
 def _parse_correctness_pass(
-    case_id: str, content: str, pass_name: str
+    case_id: str, response: dict[str, Any], pass_name: str
 ) -> tuple[int | None, str, MetricResult | None]:
-    data, err = _parse_json_obj(content, "correctness", case_id)
-    if err is not None:
-        return None, "", err
+    data, err = _extract_tool_input(response, _CORRECTNESS_TOOL["name"])
+    if data is None:
+        return None, "", MetricResult(
+            metric_name="correctness",
+            case_id=case_id,
+            value=0.0,
+            error=err or f"No tool input found ({pass_name})",
+        )
 
-    assert data is not None
     if "score" not in data:
         return None, "", MetricResult(
             metric_name="correctness",
@@ -194,6 +273,9 @@ def _parse_correctness_pass(
         )
 
     return raw_score, str(data.get("reasoning", "")), None
+
+
+_DISAGREEMENT_THRESHOLD = 2
 
 
 class CorrectnessJudge:
@@ -223,27 +305,34 @@ class CorrectnessJudge:
             "Judge the candidate against the reference regardless of order."
         )
 
+        tools = [_CORRECTNESS_TOOL]
+        tool_choice = {"type": "tool", "name": _CORRECTNESS_TOOL["name"]}
+
         forward_raw = await self._llm.complete(
             system=self._system,
             user=forward_user,
             model=_MODEL,
             temperature=0.0,
+            tools=tools,
+            tool_choice=tool_choice,
         )
         swapped_raw = await self._llm.complete(
             system=self._system,
             user=swapped_user,
             model=_MODEL,
             temperature=0.0,
+            tools=tools,
+            tool_choice=tool_choice,
         )
 
         fwd_score, fwd_reasoning, fwd_err = _parse_correctness_pass(
-            case.id, str(forward_raw.get("content", "")), "forward"
+            case.id, forward_raw, "forward"
         )
         if fwd_err is not None:
             return fwd_err
 
         swp_score, swp_reasoning, swp_err = _parse_correctness_pass(
-            case.id, str(swapped_raw.get("content", "")), "swapped"
+            case.id, swapped_raw, "swapped"
         )
         if swp_err is not None:
             return swp_err
@@ -260,6 +349,7 @@ class CorrectnessJudge:
                 "forward_score": fwd_score,
                 "swapped_score": swp_score,
                 "disagreement": disagreement,
+                "disagreement_flag": disagreement >= _DISAGREEMENT_THRESHOLD,
                 "reasoning_forward": fwd_reasoning,
                 "reasoning_swapped": swp_reasoning,
             },
@@ -268,6 +358,11 @@ class CorrectnessJudge:
 
 # ---------------------------------------------------------------------------
 # RoutingJudge
+#
+# Deterministic by design — routing accuracy is a direct comparison between
+# the system's `routing_decision` and the test case's `question_type`. No LLM
+# call is involved. The file `prompts/judges/routing/v1.txt` is kept as a
+# placeholder for a future LLM-assisted variant and is intentionally unused.
 # ---------------------------------------------------------------------------
 
 

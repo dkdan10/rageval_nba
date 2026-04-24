@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import scripts.build_stats_db as build_module
-from rageval.demo.sql_agent import SQLAgent, _validate_sql
+from rageval.demo.sql_agent import _TOOL_NAME, SQLAgent, _validate_sql
 from rageval.types import SQLResult
 
 # ---------------------------------------------------------------------------
@@ -33,9 +33,27 @@ def db(db_path: Path) -> Generator[sqlite3.Connection, None, None]:
 
 
 def _make_agent(db_path: Path, llm_json: str) -> SQLAgent:
-    """Return a SQLAgent whose LLM always replies with *llm_json*."""
+    """Return a SQLAgent whose LLM always replies with *llm_json* as text (fallback path)."""
     llm = MagicMock()
-    llm.complete = AsyncMock(return_value={"content": llm_json})
+    llm.complete = AsyncMock(return_value={"content": llm_json, "tool_calls": []})
+    return SQLAgent(llm=llm, db_path=db_path)
+
+
+def _make_tooluse_agent(db_path: Path, sql: str, reasoning: str = "test") -> SQLAgent:
+    """Return a SQLAgent whose LLM replies via a tool_use call."""
+    llm = MagicMock()
+    llm.complete = AsyncMock(
+        return_value={
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "t1",
+                    "name": _TOOL_NAME,
+                    "input": {"reasoning": reasoning, "sql": sql},
+                }
+            ],
+        }
+    )
     return SQLAgent(llm=llm, db_path=db_path)
 
 
@@ -167,6 +185,62 @@ def test_validate_sql_rejects_non_select() -> None:
 
 
 # ---------------------------------------------------------------------------
+# _validate_sql: additional safety edge cases (multi-statement, comments, ATTACH)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT 1; SELECT 2",
+    "SELECT * FROM players; DROP TABLE players",
+    "SELECT * FROM players;SELECT * FROM teams",
+])
+def test_validate_sql_rejects_multi_statement(sql: str) -> None:
+    err = _validate_sql(sql)
+    assert err is not None
+    assert "multiple" in err.lower() or "forbidden" in err.lower()
+
+
+def test_validate_sql_rejects_attach() -> None:
+    assert _validate_sql("ATTACH DATABASE 'foo.db' AS foo") is not None
+
+
+def test_validate_sql_rejects_detach() -> None:
+    assert _validate_sql("DETACH DATABASE foo") is not None
+
+
+def test_validate_sql_rejects_pragma() -> None:
+    assert _validate_sql("PRAGMA table_info(players)") is not None
+
+
+def test_validate_sql_rejects_comment_hiding_drop() -> None:
+    # The "SELECT" prefix here is inside a line comment only.
+    sql = "-- SELECT\nDROP TABLE players"
+    assert _validate_sql(sql) is not None
+
+
+def test_validate_sql_rejects_block_comment_hiding_insert() -> None:
+    sql = "SELECT * FROM players /* hide */ ; /* */ INSERT INTO players VALUES (1)"
+    err = _validate_sql(sql)
+    assert err is not None
+
+
+def test_validate_sql_rejects_empty() -> None:
+    assert _validate_sql("") is not None
+    assert _validate_sql("   ") is not None
+
+
+def test_validate_sql_accepts_trailing_semicolon() -> None:
+    # A single trailing semicolon is harmless.
+    assert _validate_sql("SELECT 1;") is None
+
+
+def test_validate_sql_accepts_select_with_line_comment() -> None:
+    # SELECT with a comment is fine (no forbidden keywords inside the comment).
+    sql = "SELECT full_name FROM players -- list all\n"
+    assert _validate_sql(sql) is None
+
+
+# ---------------------------------------------------------------------------
 # SQLAgent integration tests (mocked LLM)
 # ---------------------------------------------------------------------------
 
@@ -212,11 +286,13 @@ async def test_agent_rejects_non_select(db_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_agent_handles_invalid_json(db_path: Path) -> None:
+async def test_agent_handles_no_tool_call(db_path: Path) -> None:
+    # Neither a tool_call nor valid JSON text → must not execute anything.
     agent = _make_agent(db_path, "not json at all")
     result = await agent.generate_and_execute("anything")
     assert result.error is not None
-    assert "invalid json" in result.error.lower()
+    assert "tool call" in result.error.lower() or "sql" in result.error.lower()
+    assert result.rows == []
 
 
 @pytest.mark.asyncio
@@ -247,6 +323,51 @@ async def test_agent_missing_db(tmp_path: Path) -> None:
     result = await agent.generate_and_execute("anything")
     assert result.error is not None
     assert "not found" in result.error.lower()
+
+
+@pytest.mark.asyncio
+async def test_agent_executes_tooluse_response(db_path: Path) -> None:
+    agent = _make_tooluse_agent(db_path, "SELECT full_name FROM players")
+    result = await agent.generate_and_execute("list players")
+    assert result.error is None
+    assert len(result.rows) == 9
+
+
+@pytest.mark.asyncio
+async def test_agent_rejects_tooluse_multi_statement(db_path: Path) -> None:
+    agent = _make_tooluse_agent(db_path, "SELECT 1; SELECT 2")
+    result = await agent.generate_and_execute("multi")
+    assert result.error is not None
+    assert "multiple" in result.error.lower() or "forbidden" in result.error.lower()
+
+
+@pytest.mark.asyncio
+async def test_agent_rejects_tooluse_attach(db_path: Path) -> None:
+    agent = _make_tooluse_agent(db_path, "ATTACH DATABASE 'foo.db' AS foo")
+    result = await agent.generate_and_execute("attach")
+    assert result.error is not None
+    assert result.rows == []
+
+
+@pytest.mark.asyncio
+async def test_agent_passes_tool_schema(db_path: Path) -> None:
+    llm = MagicMock()
+    llm.complete = AsyncMock(
+        return_value={
+            "content": "",
+            "tool_calls": [
+                {"id": "t", "name": _TOOL_NAME, "input": {"reasoning": "x", "sql": "SELECT 1"}}
+            ],
+        }
+    )
+    agent = SQLAgent(llm=llm, db_path=db_path)
+    await agent.generate_and_execute("anything")
+    kwargs = llm.complete.call_args.kwargs
+    tools = kwargs["tools"]
+    assert len(tools) == 1
+    assert tools[0]["name"] == _TOOL_NAME
+    assert "sql" in tools[0]["input_schema"]["properties"]
+    assert kwargs["tool_choice"] == {"type": "tool", "name": _TOOL_NAME}
 
 
 @pytest.mark.asyncio
@@ -310,3 +431,181 @@ def test_ingestion_log_seed_row_fields(db: sqlite3.Connection) -> None:
     assert row["source"] == "seed"
     assert row["records_added"] > 0
     assert row["run_at"] is not None
+
+
+# ---------------------------------------------------------------------------
+# Article / chunk placeholder tables (empty, created by schema init)
+# ---------------------------------------------------------------------------
+
+
+def test_articles_table_exists(db: sqlite3.Connection) -> None:
+    info = db.execute("PRAGMA table_info(articles)").fetchall()
+    cols = {r["name"] for r in info}
+    required = {
+        "article_id", "title", "source", "author", "url",
+        "publish_date", "full_text", "word_count", "ingested_at",
+    }
+    assert required <= cols
+
+
+def test_article_chunks_table_exists(db: sqlite3.Connection) -> None:
+    info = db.execute("PRAGMA table_info(article_chunks)").fetchall()
+    cols = {r["name"] for r in info}
+    assert {"chunk_id", "article_id", "chunk_index", "content", "token_count"} <= cols
+
+
+def test_article_tables_are_empty_on_seed_build(db: sqlite3.Connection) -> None:
+    # Corpus ingestion is Milestone 7 — the seed build must not populate these.
+    assert db.execute("SELECT COUNT(*) FROM articles").fetchone()[0] == 0
+    assert db.execute("SELECT COUNT(*) FROM article_chunks").fetchone()[0] == 0
+
+
+# ---------------------------------------------------------------------------
+# Real-mode ingestion (mocked nba_api) — verifies the code path without network.
+# ---------------------------------------------------------------------------
+
+
+def test_build_real_mocked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exercise build_real with mocked nba_api endpoints + static teams."""
+    import sys
+
+    # Stub nba_api modules *before* build_real imports them.
+    fake_static_teams = MagicMock()
+    fake_static_teams.get_teams = lambda: [
+        {
+            "id": 1610612738,
+            "abbreviation": "BOS",
+            "full_name": "Boston Celtics",
+            "city": "Boston",
+            "nickname": "Celtics",
+        }
+    ]
+
+    fake_player_stats = MagicMock()
+
+    def _player_stats_cls(season: str) -> MagicMock:  # noqa: ARG001
+        inst = MagicMock()
+        inst.get_dict.return_value = {
+            "resultSets": [
+                {
+                    "headers": [
+                        "PLAYER_ID", "PLAYER_NAME", "TEAM_ID",
+                        "GP", "GS", "MIN", "PTS", "REB", "AST",
+                        "STL", "BLK", "TOV", "FG_PCT", "FG3_PCT", "FT_PCT",
+                    ],
+                    "rowSet": [
+                        [
+                            1,
+                            "Test Player",
+                            1610612738,
+                            70, 70, 34.0, 25.0, 8.0, 5.0,
+                            1.1, 0.5, 2.5, 0.5, 0.38, 0.85,
+                        ]
+                    ],
+                }
+            ]
+        }
+        return inst
+
+    fake_player_stats.LeagueDashPlayerStats = _player_stats_cls
+
+    fake_team_stats = MagicMock()
+
+    def _team_stats_cls(season: str) -> MagicMock:  # noqa: ARG001
+        inst = MagicMock()
+        inst.get_dict.return_value = {
+            "resultSets": [
+                {
+                    "headers": ["TEAM_ID", "W", "L", "PTS"],
+                    "rowSet": [[1610612738, 50, 32, 118.0]],
+                }
+            ]
+        }
+        return inst
+
+    fake_team_stats.LeagueDashTeamStats = _team_stats_cls
+
+    # Build the fake nba_api package tree.
+    nba_api_mod = MagicMock()
+    stats_mod = MagicMock()
+    endpoints_mod = MagicMock()
+    static_mod = MagicMock()
+    endpoints_mod.leaguedashplayerstats = fake_player_stats
+    endpoints_mod.leaguedashteamstats = fake_team_stats
+    static_mod.teams = fake_static_teams
+    stats_mod.endpoints = endpoints_mod
+    stats_mod.static = static_mod
+    nba_api_mod.stats = stats_mod
+
+    monkeypatch.setitem(sys.modules, "nba_api", nba_api_mod)
+    monkeypatch.setitem(sys.modules, "nba_api.stats", stats_mod)
+    monkeypatch.setitem(sys.modules, "nba_api.stats.endpoints", endpoints_mod)
+    monkeypatch.setitem(sys.modules, "nba_api.stats.static", static_mod)
+    monkeypatch.setitem(
+        sys.modules, "nba_api.stats.endpoints.leaguedashplayerstats", fake_player_stats
+    )
+    monkeypatch.setitem(
+        sys.modules, "nba_api.stats.endpoints.leaguedashteamstats", fake_team_stats
+    )
+    monkeypatch.setitem(sys.modules, "nba_api.stats.static.teams", fake_static_teams)
+
+    db_path = tmp_path / "nba.db"
+    raw_dir = tmp_path / "raw"
+    counts = build_module.build_real(
+        db_path=db_path, seasons=["2023-24"], raw_dir=raw_dir
+    )
+
+    assert counts["teams"] == 1
+    assert counts["players"] == 1
+    assert counts["player_season_stats"] == 1
+    assert counts["team_season_stats"] == 1
+
+    # Raw API responses saved.
+    assert (raw_dir / "teams.json").exists()
+    assert (raw_dir / "player_stats_2023-24.json").exists()
+    assert (raw_dir / "team_stats_2023-24.json").exists()
+
+    # Ingestion log has an nba_api row.
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
+    try:
+        rows = con.execute(
+            "SELECT * FROM ingestion_log WHERE source = 'nba_api'"
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["records_added"] > 0
+
+        # Data actually landed.
+        assert con.execute("SELECT COUNT(*) FROM teams").fetchone()[0] == 1
+        player = con.execute(
+            "SELECT full_name, first_name, last_name FROM players"
+        ).fetchone()
+        assert player["full_name"] == "Test Player"
+        pss = con.execute(
+            "SELECT points_per_game, games_played FROM player_season_stats"
+        ).fetchone()
+        assert pss["points_per_game"] == 25.0
+        assert pss["games_played"] == 70
+    finally:
+        con.close()
+
+
+def test_build_real_retries_on_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """_with_retries should retry a failing call then succeed."""
+    import time as time_module
+
+    monkeypatch.setattr(time_module, "sleep", lambda _s: None)
+
+    calls = {"n": 0}
+
+    def fn() -> str:
+        calls["n"] += 1
+        if calls["n"] < 2:
+            raise RuntimeError("flaky")
+        return "ok"
+
+    result = build_module._with_retries(fn, attempts=3, base_delay=0.0, label="t")
+    assert result == "ok"
+    assert calls["n"] == 2

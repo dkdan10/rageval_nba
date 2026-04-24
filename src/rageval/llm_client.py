@@ -1,9 +1,11 @@
+"""Async Anthropic wrapper with disk cache, retries, and tool-use support."""
+
 import asyncio
 from contextlib import suppress
 from typing import Any, cast
 
 import anthropic
-from anthropic.types import Message, MessageParam, TextBlock, ToolParam
+from anthropic.types import Message, MessageParam, TextBlock, ToolParam, ToolUseBlock
 
 from rageval.cache import get_cache_key, load_from_cache, save_to_cache
 
@@ -54,30 +56,56 @@ class LLMClient:
         temperature: float = 0.0,
         *,
         tools: list[dict[str, Any]] | None = None,
+        tool_choice: dict[str, Any] | None = None,
         no_cache: bool = False,
     ) -> dict[str, Any]:
-        tool_schema: dict[str, Any] | None = {"tools": tools} if tools is not None else None
+        """Call the Anthropic API.
+
+        The returned dict always contains:
+          - content: concatenated text from any text blocks (may be "")
+          - tool_calls: list of {"id", "name", "input"} dicts from tool_use blocks
+          - model, input_tokens, output_tokens, cost_usd, cached
+        """
+        tool_schema: dict[str, Any] | None = None
+        if tools is not None:
+            tool_schema = {"tools": tools, "tool_choice": tool_choice}
         key = get_cache_key(model, system, user, temperature, tool_schema=tool_schema)
 
         if not no_cache:
             cached = load_from_cache(key)
             if cached is not None:
+                cached = dict(cached)
                 cached["cached"] = True
+                # Ensure tool_calls key exists for backward compat with older cache entries.
+                cached.setdefault("tool_calls", [])
                 return cached
 
         async with self._sem:
-            response = await self._call_with_retry(model, system, user, temperature, tools=tools)
+            response = await self._call_with_retry(
+                model, system, user, temperature, tools=tools, tool_choice=tool_choice
+            )
 
         input_tokens: int = response.usage.input_tokens
         output_tokens: int = response.usage.output_tokens
         cost = _estimate_cost(model, input_tokens, output_tokens)
 
-        text = "".join(
-            block.text for block in response.content if isinstance(block, TextBlock)
-        )
+        text_parts: list[str] = []
+        tool_calls: list[dict[str, Any]] = []
+        for block in response.content:
+            if isinstance(block, TextBlock):
+                text_parts.append(block.text)
+            elif isinstance(block, ToolUseBlock):
+                tool_calls.append(
+                    {
+                        "id": block.id,
+                        "name": block.name,
+                        "input": block.input,
+                    }
+                )
 
         result: dict[str, Any] = {
-            "content": text,
+            "content": "".join(text_parts),
+            "tool_calls": tool_calls,
             "model": model,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
@@ -101,27 +129,25 @@ class LLMClient:
         user: str,
         temperature: float,
         tools: list[dict[str, Any]] | None = None,
+        tool_choice: dict[str, Any] | None = None,
     ) -> Message:
         messages: list[MessageParam] = [{"role": "user", "content": user}]
 
         for attempt in range(_MAX_RETRIES):
             try:
+                kwargs: dict[str, Any] = {
+                    "model": model,
+                    "max_tokens": _DEFAULT_MAX_TOKENS,
+                    "temperature": temperature,
+                    "system": system,
+                    "messages": messages,
+                }
                 if tools is not None:
-                    return await self._client.messages.create(
-                        model=model,
-                        max_tokens=_DEFAULT_MAX_TOKENS,
-                        temperature=temperature,
-                        system=system,
-                        messages=messages,
-                        tools=cast(list[ToolParam], tools),
-                    )
-                return await self._client.messages.create(
-                    model=model,
-                    max_tokens=_DEFAULT_MAX_TOKENS,
-                    temperature=temperature,
-                    system=system,
-                    messages=messages,
-                )
+                    kwargs["tools"] = cast(list[ToolParam], tools)
+                    if tool_choice is not None:
+                        kwargs["tool_choice"] = tool_choice
+                message: Message = await self._client.messages.create(**kwargs)
+                return message
             except anthropic.RateLimitError as exc:
                 if attempt == _MAX_RETRIES - 1:
                     raise

@@ -34,6 +34,10 @@ def reciprocal_rank(retrieved_ids: list[str], relevant_ids: list[str]) -> float:
 
 
 def ndcg_at_k(retrieved_ids: list[str], relevant_ids: list[str], k: int) -> float:
+    # Gain function: the plan calls for `2^rel - 1` (the Microsoft/Burges variant).
+    # Our labels are binary (relevant=1, not-relevant=0), so `2^rel - 1` == `rel`
+    # for every document. We write out the relevant-vs-not-relevant gain directly
+    # (1.0 or 0.0) as the cheaper, equivalent form for binary relevance.
     if k <= 0 or not relevant_ids or not retrieved_ids:
         return 0.0
     relevant_set = set(relevant_ids)

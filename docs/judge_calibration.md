@@ -13,6 +13,51 @@ Calibration means collecting examples where a human has already labeled the corr
 
 ---
 
+## How to Run
+
+```bash
+# Requires ANTHROPIC_API_KEY for LLM-backed judges.
+uv run python scripts/calibrate_judge.py                      # all judges
+uv run python scripts/calibrate_judge.py faithfulness         # one judge
+uv run python scripts/calibrate_judge.py all --threshold 0.8
+```
+
+Results are cached in `.rageval_cache/`. A repeated run with the same fixtures
+and prompts is near-instant and free. The script prints each judge's agreement
+rate and exits non-zero if any judge falls below the threshold.
+
+Deterministic judges (currently only `routing`) require no API key.
+
+**Current status (last reviewed for Milestones 4 & 5):** unit tests in
+`tests/test_judges.py` and `tests/test_calibrate.py` fully exercise parsing,
+error handling, tool-use plumbing, and the agreement math with mocked LLM
+responses. The scripted real-LLM calibration run is gated on
+`ANTHROPIC_API_KEY` and has not been recorded in this doc yet — see the table
+below for expected format once a run is performed.
+
+## Method
+
+- Each judge has a fixture at `tests/fixtures/<judge>_calibration.yaml`.
+- Each fixture has **10 hand-labeled cases** covering positive and negative labels.
+- The calibration script instantiates the judge with a shared `LLMClient`, runs
+  it against every case, and compares the judge's verdict to the human label.
+- Agreement rate = fraction of cases where the judge's verdict matches the label.
+- Default threshold: **≥ 80% agreement** (8/10).
+- Calibration is designed to be cheap and repeatable. Disk caching means a second
+  run is free unless the prompt or fixtures change.
+
+## Structured Output
+
+All LLM-backed judges use Anthropic **tool-use** for structured output. The
+judge prompts describe which tool to call (`record_faithfulness`,
+`record_relevance`, `record_correctness`) and the expected schema. The
+`LLMClient` surfaces tool-use blocks as `tool_calls` in the returned dict, and
+the judge implementations parse them with strict type checks. Malformed outputs
+produce a `MetricResult` with `error` set and `value=0.0` so calibration can
+distinguish misclassification from protocol errors.
+
+---
+
 ## Faithfulness
 
 Faithfulness measures whether every claim in an answer is directly stated or strongly implied by the provided sources. An answer is faithful if a reader could verify each claim by consulting the sources alone.
@@ -75,7 +120,8 @@ Correctness measures how well the answer matches the expected answer on a 0–4 
 
 ### Position-Swap Bias Mitigation
 
-LLM judges can prefer whichever answer appears first in the prompt. To mitigate this, `CorrectnessJudge` runs the judge twice:
+LLM judges can prefer whichever answer appears first in the prompt. To mitigate
+this, `CorrectnessJudge` runs the judge twice:
 
 1. **Forward pass** — Candidate = `response.answer`, Reference = `case.expected_answer`
 2. **Swapped pass** — Candidate = `case.expected_answer`, Reference = `response.answer`, with a note that the judge is checking semantic equivalence regardless of order
@@ -84,29 +130,46 @@ The final score is the average of both raw scores divided by 4. `MetricResult.de
 
 - `forward_score` — raw score from the forward pass
 - `swapped_score` — raw score from the swapped pass
-- `disagreement` — absolute difference between the two scores (high values signal instability)
+- `disagreement` — absolute difference between the two scores
+- `disagreement_flag` — `True` if `disagreement >= 2`; signals the result is unstable
 - `reasoning_forward` and `reasoning_swapped` — judge reasoning for each pass
 
-A high `disagreement` value (≥ 2) is a signal to investigate the case manually.
+A high `disagreement` value (≥ 2, flagged explicitly) is a signal to investigate the case manually.
 
 ---
 
 ## Routing Accuracy
 
-Routing accuracy is evaluated **deterministically** — no LLM call is made. It compares `response.routing_decision` (a `QuestionType`) against `case.question_type`.
+Routing accuracy is evaluated **deterministically** — no LLM call is made. It
+compares `response.routing_decision` (a `QuestionType`) against `case.question_type`.
 
 - Value = `1.0` if they match, `0.0` otherwise.
 - If `routing_decision` is `None`, value = `0.0`.
 
-**Calibration set:** `tests/fixtures/routing_calibration.yaml` — 10 NBA examples (5 correct routes, 5 incorrect routes).
+The deterministic design is intentional: routing is a supervised classification
+task with a fixed set of four outcomes (factual / analytical / hybrid /
+unanswerable). Using an LLM to judge an LLM's routing choice would introduce
+noise without adding signal. The file `prompts/judges/routing/v1.txt` is kept
+as a placeholder for a future LLM-assisted variant if needed; it is intentionally
+unused, and a test asserts the file documents this.
+
+**Calibration set:** `tests/fixtures/routing_calibration.yaml` — 10 NBA examples (5 correct routes, 5 incorrect routes). The deterministic judge matches by construction (100%).
 
 ---
 
-## Current Status
+## Results Table
 
-Tests in `tests/test_judges.py` validate the plumbing only — they mock the LLM and verify that judges correctly parse responses, handle errors, and propagate details. They do not measure real judge agreement with the calibration sets.
+*(Populate this table after running `uv run python scripts/calibrate_judge.py`.)*
 
-Real calibration (running judges against the fixture sets and computing agreement with human labels) will be done in a later milestone.
+| Judge | Agreement | Threshold | Status |
+|-------|-----------|-----------|--------|
+| faithfulness | — | ≥ 80% | (run calibration) |
+| relevance | — | ≥ 80% | (run calibration) |
+| correctness | — | ≥ 80% | (run calibration) |
+| routing | 100% | ≥ 80% | PASS (deterministic) |
+
+The numbers above will be filled in on the first scripted live-LLM calibration
+run. Prompt changes should be followed by a re-run and an update to this table.
 
 ---
 
@@ -116,6 +179,6 @@ Real calibration (running judges against the fixture sets and computing agreemen
 
 **Prompt sensitivity.** Score distributions can shift with small wording changes in the judge prompt. Changes to any `prompts/judges/*/v1.txt` file should be followed by a re-run of the relevant calibration set.
 
-**Position bias.** Even with position-swap mitigation, the judge may not be fully symmetric. High `disagreement` values in correctness results warrant manual review.
+**Position bias.** Even with position-swap mitigation, the judge may not be fully symmetric. High `disagreement_flag` values in correctness results warrant manual review.
 
 **Calibration set limitations.** Ten examples per judge is enough to catch gross failures but not enough to measure subtle biases. Expand the sets before drawing conclusions about judge reliability.

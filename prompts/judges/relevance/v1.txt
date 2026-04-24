@@ -11,14 +11,11 @@ You will be given:
 - Question: the question that was asked
 - Answer: the answer to evaluate
 
-Respond with JSON only. No markdown. No code fences. No explanation outside the JSON object.
+Record your judgment by calling the `record_relevance` tool exactly once with:
+  - reasoning: brief explanation of your judgment
+  - relevant: true or false
+  - irrelevant_parts: list of specific parts of the answer that are unrelated to the question
 
-Required output schema:
-{
-  "reasoning": "brief explanation of your judgment",
-  "relevant": true or false,
-  "irrelevant_parts": ["list of specific parts of the answer that are unrelated to the question"]
-}
-
-If the answer is relevant, set relevant to true and irrelevant_parts to an empty list.
-If the answer is not relevant, set relevant to false and list the parts that are off-topic or dodging.
+If the answer is relevant, set relevant=true and irrelevant_parts=[].
+If not, set relevant=false and list the off-topic or dodging parts.
+Do not emit text outside the tool call.
