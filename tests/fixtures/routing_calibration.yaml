@@ -1,0 +1,60 @@
+cases:
+  - id: routing-001
+    question: "Who led the NBA in points per game in 2023-24?"
+    question_type: factual
+    routing_decision: factual
+    correct: true
+
+  - id: routing-002
+    question: "What are the four factors in basketball analytics?"
+    question_type: analytical
+    routing_decision: analytical
+    correct: true
+
+  - id: routing-003
+    question: "What stats support Jokic being a historic player, and how do analysts describe him?"
+    question_type: hybrid
+    routing_decision: hybrid
+    correct: true
+
+  - id: routing-004
+    question: "Who will win MVP in 2027-28?"
+    question_type: unanswerable
+    routing_decision: unanswerable
+    correct: true
+
+  - id: routing-005
+    question: "How many wins did the Celtics have in 2023-24?"
+    question_type: factual
+    routing_decision: factual
+    correct: true
+
+  - id: routing-006
+    question: "Who led the NBA in points per game in 2023-24?"
+    question_type: factual
+    routing_decision: analytical
+    correct: false
+
+  - id: routing-007
+    question: "What are the four factors in basketball analytics?"
+    question_type: analytical
+    routing_decision: factual
+    correct: false
+
+  - id: routing-008
+    question: "What stats support Jokic being a historic player, and how do analysts describe him?"
+    question_type: hybrid
+    routing_decision: factual
+    correct: false
+
+  - id: routing-009
+    question: "Who will win the 2028 championship?"
+    question_type: unanswerable
+    routing_decision: factual
+    correct: false
+
+  - id: routing-010
+    question: "How many championships has LeBron won?"
+    question_type: factual
+    routing_decision: hybrid
+    correct: false

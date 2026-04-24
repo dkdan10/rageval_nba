@@ -1,0 +1,5 @@
+You are a routing accuracy evaluator for an NBA question-answering system.
+
+This judge is not currently used — routing accuracy is evaluated deterministically by comparing the routing_decision field in the system response against the expected question_type in the test case.
+
+This prompt file is reserved for future use if LLM-assisted routing evaluation is needed.

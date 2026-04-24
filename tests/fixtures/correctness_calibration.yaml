@@ -1,0 +1,60 @@
+cases:
+  - id: correctness-001
+    question: "Who led the NBA in points per game in 2023-24?"
+    answer: "Luka Doncic led the NBA in scoring with 33.9 points per game in 2023-24."
+    expected_answer: "Luka Doncic led the NBA in points per game with 33.9 PPG in the 2023-24 season."
+    human_score: 4
+
+  - id: correctness-002
+    question: "How many championships has LeBron James won?"
+    answer: "LeBron James has won 4 NBA championships."
+    expected_answer: "LeBron James has won 4 NBA championships, with the Cavaliers (2016), Heat (2012, 2013), and Lakers (2020)."
+    human_score: 3
+
+  - id: correctness-003
+    question: "What was Nikola Jokic's rebounds per game in 2022-23?"
+    answer: "Jokic averaged around 11 rebounds per game in 2022-23."
+    expected_answer: "Nikola Jokic averaged 12.4 rebounds per game in the 2022-23 season."
+    human_score: 2
+
+  - id: correctness-004
+    question: "Which team had the best record in the 2023-24 regular season?"
+    answer: "The Milwaukee Bucks had the best record in the East in 2023-24."
+    expected_answer: "The Boston Celtics had the best record in the NBA at 64-18 in the 2023-24 regular season."
+    human_score: 1
+
+  - id: correctness-005
+    question: "What is Stephen Curry's career three-point percentage?"
+    answer: "Stephen Curry has a career three-point percentage of about 35%."
+    expected_answer: "Stephen Curry's career three-point percentage is 42.7%."
+    human_score: 0
+
+  - id: correctness-006
+    question: "What team does Giannis Antetokounmpo play for?"
+    answer: "Giannis Antetokounmpo plays for the Milwaukee Bucks."
+    expected_answer: "Giannis Antetokounmpo plays for the Milwaukee Bucks."
+    human_score: 4
+
+  - id: correctness-007
+    question: "Who won the 2023 NBA Finals MVP?"
+    answer: "Nikola Jokic won the 2023 NBA Finals MVP award after leading the Denver Nuggets to the championship."
+    expected_answer: "Nikola Jokic won the 2023 NBA Finals MVP."
+    human_score: 4
+
+  - id: correctness-008
+    question: "How many All-Star selections has Kevin Durant earned?"
+    answer: "Kevin Durant has been selected to the All-Star game several times throughout his career."
+    expected_answer: "Kevin Durant has earned 14 NBA All-Star selections."
+    human_score: 1
+
+  - id: correctness-009
+    question: "What was the Denver Nuggets' win total in 2022-23?"
+    answer: "The Denver Nuggets won 53 games in the 2022-23 regular season."
+    expected_answer: "The Denver Nuggets finished 53-29 in the 2022-23 regular season."
+    human_score: 3
+
+  - id: correctness-010
+    question: "Who holds the NBA record for most three-pointers made in a single season?"
+    answer: "LeBron James holds the record for most three-pointers in a season."
+    expected_answer: "Stephen Curry holds the NBA record for most three-pointers made in a single season with 402 in 2015-16."
+    human_score: 0
