@@ -1,6 +1,7 @@
 """Build the NBA stats SQLite database with seed data."""
 
 import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent.parent / "data" / "nba.db"
@@ -126,6 +127,14 @@ CREATE TABLE IF NOT EXISTS team_season_stats (
     FOREIGN KEY (team_id)   REFERENCES teams(team_id),
     FOREIGN KEY (season_id) REFERENCES seasons(season_id)
 );
+
+CREATE TABLE IF NOT EXISTS ingestion_log (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_at        TEXT NOT NULL,
+    source        TEXT NOT NULL,
+    records_added INTEGER NOT NULL,
+    notes         TEXT
+);
 """
 
 # (team_id, team_abbr, team_name, team_city, conference, division)
@@ -242,6 +251,16 @@ TEAM_SEASON_STATS = [
     (3, "2023-24", 47, 35, 118.3, 116.2, 99.7, 116.8, 114.7,  2.1),
 ]
 
+_SEED_RECORD_COUNT = (
+    len(TEAMS)
+    + len(PLAYERS)
+    + len(SEASONS)
+    + len(GAMES)
+    + len(PLAYER_GAME_STATS)
+    + len(PLAYER_SEASON_STATS)
+    + len(TEAM_SEASON_STATS)
+)
+
 
 def build(db_path: Path = DB_PATH) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -281,6 +300,14 @@ def build(db_path: Path = DB_PATH) -> None:
             " VALUES (?,?,?,?,?,?,?,?,?,?)",
             TEAM_SEASON_STATS,
         )
+
+        run_at = datetime.now(UTC).isoformat()
+        con.execute(
+            "INSERT INTO ingestion_log(run_at, source, records_added, notes)"
+            " VALUES (?,?,?,?)",
+            (run_at, "seed", _SEED_RECORD_COUNT, "Hardcoded seed data for testing"),
+        )
+
         con.commit()
         print(f"Database built: {db_path}")
     finally:

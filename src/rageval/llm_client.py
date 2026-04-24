@@ -1,9 +1,9 @@
 import asyncio
 from contextlib import suppress
-from typing import Any
+from typing import Any, cast
 
 import anthropic
-from anthropic.types import Message, MessageParam, TextBlock
+from anthropic.types import Message, MessageParam, TextBlock, ToolParam
 
 from rageval.cache import get_cache_key, load_from_cache, save_to_cache
 
@@ -53,9 +53,11 @@ class LLMClient:
         model: str,
         temperature: float = 0.0,
         *,
+        tools: list[dict[str, Any]] | None = None,
         no_cache: bool = False,
     ) -> dict[str, Any]:
-        key = get_cache_key(model, system, user, temperature)
+        tool_schema: dict[str, Any] | None = {"tools": tools} if tools is not None else None
+        key = get_cache_key(model, system, user, temperature, tool_schema=tool_schema)
 
         if not no_cache:
             cached = load_from_cache(key)
@@ -64,7 +66,7 @@ class LLMClient:
                 return cached
 
         async with self._sem:
-            response = await self._call_with_retry(model, system, user, temperature)
+            response = await self._call_with_retry(model, system, user, temperature, tools=tools)
 
         input_tokens: int = response.usage.input_tokens
         output_tokens: int = response.usage.output_tokens
@@ -98,11 +100,21 @@ class LLMClient:
         system: str,
         user: str,
         temperature: float,
+        tools: list[dict[str, Any]] | None = None,
     ) -> Message:
         messages: list[MessageParam] = [{"role": "user", "content": user}]
 
         for attempt in range(_MAX_RETRIES):
             try:
+                if tools is not None:
+                    return await self._client.messages.create(
+                        model=model,
+                        max_tokens=_DEFAULT_MAX_TOKENS,
+                        temperature=temperature,
+                        system=system,
+                        messages=messages,
+                        tools=cast(list[ToolParam], tools),
+                    )
                 return await self._client.messages.create(
                     model=model,
                     max_tokens=_DEFAULT_MAX_TOKENS,

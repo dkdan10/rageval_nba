@@ -330,3 +330,60 @@ async def test_no_cache_does_not_write_to_cache(
 
     key = get_cache_key("claude-sonnet-4-6", "sys", "usr", 0.0)
     assert load_from_cache(key) is None
+
+
+# ── LLMClient: tools parameter ───────────────────────────────────────────────
+
+
+_SAMPLE_TOOLS = [
+    {
+        "name": "get_stats",
+        "description": "Retrieve NBA statistics.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    }
+]
+
+
+async def test_tools_passed_to_api_create(
+    isolated_cache: Path, mock_create: AsyncMock
+) -> None:
+    await LLMClient().complete("sys", "usr", "claude-sonnet-4-6", tools=_SAMPLE_TOOLS)
+    call_kwargs = mock_create.call_args.kwargs
+    assert "tools" in call_kwargs
+    assert call_kwargs["tools"] == _SAMPLE_TOOLS
+
+
+async def test_no_tools_omits_tools_kwarg(
+    isolated_cache: Path, mock_create: AsyncMock
+) -> None:
+    await LLMClient().complete("sys", "usr", "claude-sonnet-4-6")
+    call_kwargs = mock_create.call_args.kwargs
+    assert "tools" not in call_kwargs
+
+
+async def test_tools_produces_different_cache_key_than_no_tools(
+    isolated_cache: Path, mock_create: AsyncMock
+) -> None:
+    # First call without tools — cached.
+    await LLMClient().complete("sys", "usr", "claude-sonnet-4-6")
+    # Second call with tools — different cache key, so API is called again.
+    await LLMClient().complete("sys", "usr", "claude-sonnet-4-6", tools=_SAMPLE_TOOLS)
+    assert mock_create.call_count == 2
+
+
+async def test_tools_result_cached_separately(
+    isolated_cache: Path, mock_create: AsyncMock
+) -> None:
+    await LLMClient().complete("sys", "usr", "claude-sonnet-4-6", tools=_SAMPLE_TOOLS)
+    await LLMClient().complete("sys", "usr", "claude-sonnet-4-6", tools=_SAMPLE_TOOLS)
+    assert mock_create.call_count == 1  # second call is a cache hit
+
+
+async def test_different_tools_produce_different_cache_keys(
+    isolated_cache: Path, mock_create: AsyncMock
+) -> None:
+    tools_a = [{"name": "tool_a", "input_schema": {"type": "object"}}]
+    tools_b = [{"name": "tool_b", "input_schema": {"type": "object"}}]
+    await LLMClient().complete("sys", "usr", "claude-sonnet-4-6", tools=tools_a)
+    await LLMClient().complete("sys", "usr", "claude-sonnet-4-6", tools=tools_b)
+    assert mock_create.call_count == 2

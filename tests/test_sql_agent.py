@@ -260,3 +260,53 @@ async def test_agent_result_is_list_of_dicts(db_path: Path) -> None:
         assert isinstance(row, dict)
         assert "full_name" in row
         assert "position" in row
+
+
+# ---------------------------------------------------------------------------
+# Prompt file loading (Fix: sql_agent must load from prompts/sql_agent/v1.txt)
+# ---------------------------------------------------------------------------
+
+
+def test_prompt_file_exists() -> None:
+    from rageval.demo.sql_agent import _PROMPT_PATH
+    assert _PROMPT_PATH.exists(), f"Prompt file missing: {_PROMPT_PATH}"
+
+
+def test_agent_system_prompt_matches_prompt_file(db_path: Path) -> None:
+    from rageval.demo.sql_agent import _PROMPT_PATH, SQLAgent
+    agent = SQLAgent(db_path=db_path)
+    assert agent._system == _PROMPT_PATH.read_text(encoding="utf-8")
+
+
+def test_prompt_file_contains_select_rule() -> None:
+    from rageval.demo.sql_agent import _PROMPT_PATH
+    content = _PROMPT_PATH.read_text(encoding="utf-8")
+    assert "SELECT" in content
+
+
+# ---------------------------------------------------------------------------
+# ingestion_log table (Fix: add ingestion_log per PROJECT_PLAN.md)
+# ---------------------------------------------------------------------------
+
+
+def test_ingestion_log_table_exists(db: sqlite3.Connection) -> None:
+    info = db.execute("PRAGMA table_info(ingestion_log)").fetchall()
+    assert len(info) > 0, "ingestion_log table not found"
+
+
+def test_ingestion_log_columns(db: sqlite3.Connection) -> None:
+    info = db.execute("PRAGMA table_info(ingestion_log)").fetchall()
+    cols = {r["name"] for r in info}
+    assert {"id", "run_at", "source", "records_added", "notes"} <= cols
+
+
+def test_ingestion_log_has_one_seed_row(db: sqlite3.Connection) -> None:
+    rows = db.execute("SELECT * FROM ingestion_log").fetchall()
+    assert len(rows) == 1
+
+
+def test_ingestion_log_seed_row_fields(db: sqlite3.Connection) -> None:
+    row = db.execute("SELECT * FROM ingestion_log").fetchone()
+    assert row["source"] == "seed"
+    assert row["records_added"] > 0
+    assert row["run_at"] is not None
