@@ -34,6 +34,7 @@ rageval = "rageval.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rageval"]
+artifacts = ["src/rageval/templates/*.j2", "src/rageval/examples/*.yaml"]
 
 [tool.ruff]
 line-length = 100

@@ -22,10 +22,17 @@ from rageval.types import (
 
 
 class _AsyncMetric(Protocol):
-    async def evaluate(self, case: TestCase, response: RAGResponse) -> MetricResult: ...
+    async def evaluate(
+        self,
+        case: TestCase,
+        response: RAGResponse,
+    ) -> MetricResult | None: ...
 
 
-_SyncMetric = Callable[[TestCase, RAGResponse], MetricResult | Awaitable[MetricResult]]
+_SyncMetric = Callable[
+    [TestCase, RAGResponse],
+    MetricResult | None | Awaitable[MetricResult | None],
+]
 _Metric = _AsyncMetric | _SyncMetric
 
 
@@ -85,6 +92,7 @@ class Evaluator:
             return CaseResult(
                 case_id=case.id,
                 question=case.question,
+                question_type=case.question_type,
                 response=response,
                 metric_results=[
                     MetricResult(
@@ -98,11 +106,14 @@ class Evaluator:
 
         metric_results: list[MetricResult] = []
         for metric in self.metrics:
-            metric_results.append(await _run_metric(metric, case, response))
+            metric_result = await _run_metric(metric, case, response)
+            if metric_result is not None:
+                metric_results.append(metric_result)
 
         return CaseResult(
             case_id=case.id,
             question=case.question,
+            question_type=case.question_type,
             response=response,
             metric_results=metric_results,
         )
@@ -112,10 +123,10 @@ async def _run_metric(
     metric: _Metric,
     case: TestCase,
     response: RAGResponse,
-) -> MetricResult:
+) -> MetricResult | None:
     metric_name = _metric_name(metric)
     try:
-        result: MetricResult | Awaitable[MetricResult]
+        result: MetricResult | None | Awaitable[MetricResult | None]
         if hasattr(metric, "evaluate"):
             result = cast(_AsyncMetric, metric).evaluate(case, response)
         else:

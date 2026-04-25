@@ -16,6 +16,8 @@ wheels/
 # Project-specific
 .rageval_cache/
 *.db
+report.html
+demo-report.html
 data/raw/
 
 # IDE

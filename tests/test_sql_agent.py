@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+import time
 from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -11,6 +12,11 @@ import pytest
 import scripts.build_stats_db as build_module
 from rageval.demo.sql_agent import _TOOL_NAME, SQLAgent, _validate_sql
 from rageval.types import SQLResult
+
+
+@pytest.fixture(autouse=True)
+def _disable_real_ingestion_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -721,6 +727,48 @@ def test_build_real_mocked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
         con.close()
 
 
+def test_build_real_resume_raw_uses_cached_payloads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Full real build can resume entirely from cached raw JSON without endpoints."""
+    _setup_nba_api_mocks(monkeypatch)
+    source_raw = tmp_path / "source_raw"
+    build_module.build_real(
+        db_path=tmp_path / "source.db",
+        seasons=["2023-24"],
+        raw_dir=source_raw,
+        rate_limit_seconds=0.0,
+    )
+
+    import sys
+
+    endpoints = sys.modules["nba_api.stats.endpoints"]
+    endpoints.leaguedashplayerstats.LeagueDashPlayerStats = MagicMock(
+        side_effect=AssertionError("player stats endpoint should not be called")
+    )
+    endpoints.leaguedashteamstats.LeagueDashTeamStats = MagicMock(
+        side_effect=AssertionError("team stats endpoint should not be called")
+    )
+    endpoints.leaguegamelog.LeagueGameLog = MagicMock(
+        side_effect=AssertionError("game log endpoint should not be called")
+    )
+    endpoints.playergamelogs.PlayerGameLogs = MagicMock(
+        side_effect=AssertionError("player game logs endpoint should not be called")
+    )
+
+    counts = build_module.build_real(
+        db_path=tmp_path / "resumed.db",
+        seasons=["2023-24"],
+        raw_dir=source_raw,
+        resume_raw=True,
+        rate_limit_seconds=0.0,
+    )
+
+    assert counts["teams"] == 2
+    assert counts["player_game_stats"] == 1
+
+
 def test_build_real_games_populated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Games table is populated with real-mode ingestion."""
     _setup_nba_api_mocks(monkeypatch)
@@ -920,16 +968,105 @@ def test_game_type_from_id(game_id: int, expected: str) -> None:
     assert build_module._game_type_from_id(game_id) == expected
 
 
-def test_default_mode_is_real() -> None:
-    """CLI default mode must be 'real' per PROJECT_PLAN.md milestone 3.5."""
+def test_default_mode_is_seed() -> None:
+    """CLI default mode is the offline seed fixture for local demos."""
     args = build_module._parse_args([])
+    assert args.mode == "seed"
+
+
+def test_real_mode_explicit() -> None:
+    """Real nba_api ingestion remains available when requested explicitly."""
+    args = build_module._parse_args(["--mode", "real"])
     assert args.mode == "real"
 
 
-def test_seed_mode_explicit() -> None:
-    """--mode seed must still be accepted (needed by offline tests)."""
-    args = build_module._parse_args(["--mode", "seed"])
-    assert args.mode == "seed"
+def test_real_ingestion_reliability_args_parse() -> None:
+    args = build_module._parse_args([
+        "--mode",
+        "real",
+        "--timeout-seconds",
+        "12.5",
+        "--rate-limit-seconds",
+        "0.25",
+        "--resume-raw",
+    ])
+
+    assert args.mode == "real"
+    assert args.timeout_seconds == 12.5
+    assert args.rate_limit_seconds == 0.25
+    assert args.resume_raw is True
+
+
+def test_fetch_or_load_raw_uses_cache_without_fetch_or_sleep(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    (raw_dir / "cached.json").write_text(json.dumps({"ok": True}), encoding="utf-8")
+    slept: list[float] = []
+    monkeypatch.setattr(time, "sleep", slept.append)
+
+    def fetch() -> object:
+        raise AssertionError("fetch should not be called for cache hit")
+
+    result = build_module._fetch_or_load_raw(
+        "cached",
+        raw_dir,
+        fetch,
+        resume_raw=True,
+        rate_limit_seconds=2.0,
+    )
+
+    assert result == {"ok": True}
+    assert slept == []
+
+
+def test_fetch_or_load_raw_refetches_malformed_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    (raw_dir / "bad.json").write_text("{not json", encoding="utf-8")
+    slept: list[float] = []
+    monkeypatch.setattr(time, "sleep", slept.append)
+
+    result = build_module._fetch_or_load_raw(
+        "bad",
+        raw_dir,
+        lambda: {"fresh": True},
+        resume_raw=True,
+        rate_limit_seconds=0.5,
+    )
+
+    assert result == {"fresh": True}
+    assert slept == [0.5]
+    assert json.loads((raw_dir / "bad.json").read_text(encoding="utf-8")) == {
+        "fresh": True
+    }
+
+
+def test_fetch_or_load_raw_saves_fetch_and_rate_limits(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    slept: list[float] = []
+    monkeypatch.setattr(time, "sleep", slept.append)
+
+    result = build_module._fetch_or_load_raw(
+        "fresh",
+        tmp_path / "raw",
+        lambda: {"value": 7},
+        resume_raw=False,
+        rate_limit_seconds=1.25,
+    )
+
+    assert result == {"value": 7}
+    assert slept == [1.25]
+    assert json.loads((tmp_path / "raw" / "fresh.json").read_text(encoding="utf-8")) == {
+        "value": 7
+    }
 
 
 def test_build_real_retries_on_failure(

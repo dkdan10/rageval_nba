@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ result.suite_name }} report</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+      :root {
+        --route-factual: #2a6ed4;
+        --route-analytical: #2f9e6e;
+        --route-hybrid: #7b3eb6;
+        --route-unanswerable: #6b6b6b;
+        --route-missing: #b42318;
+        --score-good: #2f9e6e;
+        --score-mid: #d29423;
+        --score-low: #b42318;
+        --score-na: #999999;
+      }
+      body { padding-block: 2rem; }
+      pre { white-space: pre-wrap; word-break: break-word; font-size: 0.85rem; }
+      code { font-size: 0.85rem; }
+      .grid-summary { grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.75rem; }
+      .stat-card { margin: 0; padding: 0.75rem 1rem; }
+      .stat-card strong { display: block; font-size: 0.75rem; text-transform: uppercase;
+                         letter-spacing: 0.05em; color: var(--pico-muted-color); margin-bottom: 0.2rem; }
+      .stat-card .stat-value { font-size: 1.4rem; font-weight: 600; margin: 0; }
+      .muted { color: var(--pico-muted-color); }
+      .error { color: #b42318; }
+      .metric-error { background: rgba(180, 35, 24, 0.08); }
+      .metric-error td:first-child { border-left: 0.25rem solid var(--score-low); padding-left: 0.5rem; }
+      .doc-list { margin-bottom: 0; padding-left: 1.2rem; }
+      .badge { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px;
+               font-size: 0.75rem; font-weight: 600; color: white; line-height: 1.4;
+               vertical-align: middle; }
+      .badge-route-factual { background: var(--route-factual); }
+      .badge-route-analytical { background: var(--route-analytical); }
+      .badge-route-hybrid { background: var(--route-hybrid); }
+      .badge-route-unanswerable { background: var(--route-unanswerable); }
+      .badge-route-missing { background: var(--route-missing); }
+      .badge-score-good { background: var(--score-good); }
+      .badge-score-mid { background: var(--score-mid); }
+      .badge-score-low { background: var(--score-low); }
+      .badge-score-na { background: var(--score-na); }
+      .badge-status-ok { background: var(--score-good); }
+      .badge-status-warn { background: var(--score-mid); }
+      .badge-status-err { background: var(--score-low); }
+      .case-card { margin: 0 0 0.6rem; padding: 0.85rem 1.1rem; }
+      .case-card > summary { list-style: none; cursor: pointer; }
+      .case-card > summary::-webkit-details-marker { display: none; }
+      .case-card > summary .case-id { font-weight: 700; margin-right: 0.5rem; }
+      .case-section { margin-top: 0.85rem; }
+      .case-section h4 { margin: 0 0 0.3rem; font-size: 0.8rem; text-transform: uppercase;
+                         letter-spacing: 0.05em; color: var(--pico-muted-color); }
+      .case-section .empty { color: var(--pico-muted-color); font-style: italic; font-size: 0.9rem; }
+      .charts-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+                    gap: 1rem; margin-top: 1rem; }
+      .chart-card { padding: 1rem; }
+      .chart-card h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+      .what-shows ul { margin: 0; padding-left: 1.2rem; }
+      .what-shows li { margin-bottom: 0.3rem; }
+      .metric-description { font-size: 0.85rem; color: var(--pico-muted-color);
+                            display: block; margin-top: 0.2rem; max-width: 36rem; }
+      .footnotes { font-size: 0.85rem; color: var(--pico-muted-color); }
+      .footnotes ul { padding-left: 1.2rem; margin: 0; }
+      .footnotes li { margin-bottom: 0.25rem; }
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <p class="muted">rageval HTML report</p>
+        <h1>{{ result.suite_name }}</h1>
+        <p class="muted">
+          System: <strong>{{ result.system_name }}</strong>
+          · Run at: {{ result.run_at.isoformat() }}
+        </p>
+        <div class="grid grid-summary">
+          <article class="stat-card">
+            <strong>System</strong>
+            <p class="stat-value">{{ result.system_name }}</p>
+          </article>
+          <article class="stat-card">
+            <strong>Run At</strong>
+            <p class="stat-value">{{ result.run_at.isoformat() }}</p>
+          </article>
+          <article class="stat-card">
+            <strong>Duration</strong>
+            <p class="stat-value">{{ result.total_duration_seconds|seconds }}</p>
+          </article>
+          <article class="stat-card">
+            <strong>Total Cost</strong>
+            <p class="stat-value">{{ result.total_cost_usd|money }}</p>
+          </article>
+          <article class="stat-card">
+            <strong>Cases</strong>
+            <p class="stat-value">{{ diagnostics.total_cases }}</p>
+          </article>
+          <article class="stat-card">
+            <strong>Metric Errors</strong>
+            <p class="stat-value">{{ diagnostics.metric_errors }}</p>
+          </article>
+        </div>
+      </header>
+
+      <section class="what-shows">
+        <h2>What This Report Shows</h2>
+        <ul>
+          <li>
+            <strong>Suite, system, and run summary.</strong> The suite name, system under
+            test, run timestamp, total duration, and total LLM cost.
+          </li>
+          <li>
+            <strong>Aggregate scores.</strong> Mean per metric across the cases it ran on,
+            plus a one-line description of what each metric measures.
+          </li>
+          <li>
+            <strong>Route diagnostics.</strong> How the router classified each case
+            (factual, analytical, hybrid, unanswerable) and whether the case produced
+            SQL or retrieved evidence.
+          </li>
+          <li>
+            <strong>Per-case drilldowns.</strong> For every case: route badge, the
+            answer, SQL evidence (if any), retrieved evidence (if any), and per-metric
+            results with errors highlighted.
+          </li>
+          <li>
+            <strong>Metric coverage.</strong> Each metric's emitted vs skipped count.
+            Skipped cases are <em>not failures</em> &mdash; they mean the metric is not
+            applicable for that case (for example, retrieval metrics are skipped on
+            cases that have no relevant doc IDs).
+          </li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Aggregate Scores</h2>
+        {% if metric_summaries %}
+          <table>
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>Score</th>
+                <th>Coverage</th>
+                <th>Errors</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for summary in metric_summaries %}
+                <tr>
+                  <td>
+                    <strong>{{ summary.metric_name }}</strong>
+                    {% if summary.description %}
+                      <span class="metric-description">{{ summary.description }}</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if summary.score is not none %}
+                      <span class="badge badge-{{ summary.score|score_class }}">
+                        {{ "%.3f"|format(summary.score) }}
+                      </span>
+                    {% else %}
+                      <span class="badge badge-score-na">n/a</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {{ summary.successful_count }} successful /
+                    {{ summary.total_count }} emitted /
+                    {{ summary.skipped_count }} skipped of
+                    {{ summary.case_count }} cases
+                  </td>
+                  <td>
+                    {% if summary.error_count > 0 %}
+                      <span class="badge badge-status-err">{{ summary.error_count }}</span>
+                    {% else %}
+                      <span class="badge badge-status-ok">0</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          <div class="charts-row">
+            <article class="chart-card">
+              <h3>Aggregate metric scores</h3>
+              <canvas id="aggregate-chart" height="160"></canvas>
+              <p class="muted" style="font-size: 0.8rem; margin-top: 0.5rem;">
+                Mean score per metric across the cases it ran on. Range 0&ndash;1.
+              </p>
+            </article>
+            <article class="chart-card">
+              <h3>Metric coverage</h3>
+              <canvas id="coverage-chart" height="160"></canvas>
+              <p class="muted" style="font-size: 0.8rem; margin-top: 0.5rem;">
+                Successful, errored, and skipped case counts per metric.
+                Skipped means the metric is not applicable for that case.
+              </p>
+            </article>
+          </div>
+        {% else %}
+          <p class="muted">No aggregate scores were produced.</p>
+        {% endif %}
+      </section>
+
+      <section>
+        <h2>Run Diagnostics</h2>
+        <div class="grid grid-summary">
+          <article class="stat-card">
+            <strong>Total Cases</strong>
+            <p class="stat-value">{{ diagnostics.total_cases }}</p>
+          </article>
+          <article class="stat-card">
+            <strong>Refused Cases</strong>
+            <p class="stat-value">{{ diagnostics.refused_cases }}</p>
+          </article>
+          <article class="stat-card">
+            <strong>Cases With SQL</strong>
+            <p class="stat-value">{{ diagnostics.cases_with_sql }}</p>
+          </article>
+          <article class="stat-card">
+            <strong>Cases With Retrieved Docs</strong>
+            <p class="stat-value">{{ diagnostics.cases_with_retrieved_docs }}</p>
+          </article>
+          <article class="stat-card">
+            <strong>Overall Errors</strong>
+            <p class="stat-value">{{ diagnostics.overall_errors }}</p>
+          </article>
+          <article class="stat-card">
+            <strong>Metric Errors</strong>
+            <p class="stat-value">{{ diagnostics.metric_errors }}</p>
+          </article>
+          <article class="stat-card">
+            <strong>Factual Routes</strong>
+            <p class="stat-value">{{ diagnostics.route_factual|default(0) }}</p>
+          </article>
+          <article class="stat-card">
+            <strong>Analytical Routes</strong>
+            <p class="stat-value">{{ diagnostics.route_analytical|default(0) }}</p>
+          </article>
+          <article class="stat-card">
+            <strong>Hybrid Routes</strong>
+            <p class="stat-value">{{ diagnostics.route_hybrid|default(0) }}</p>
+          </article>
+          <article class="stat-card">
+            <strong>Unanswerable / Adversarial Routes</strong>
+            <p class="stat-value">{{ diagnostics.route_unanswerable|default(0) }}</p>
+          </article>
+        </div>
+        {% if route_distribution %}
+          <div class="charts-row">
+            <article class="chart-card">
+              <h3>Route distribution</h3>
+              <canvas id="route-chart" height="160"></canvas>
+              <p class="muted" style="font-size: 0.8rem; margin-top: 0.5rem;">
+                How the router classified each case. Counts shown as badges:
+                {% for route in route_distribution %}
+                  <span class="badge badge-route-{{ route.key }}">{{ route.label }} {{ route.count }}</span>
+                {% endfor %}
+              </p>
+            </article>
+          </div>
+        {% endif %}
+      </section>
+
+      {% if result.errors %}
+        <section>
+          <h2>Overall Errors</h2>
+          <ul>
+            {% for error in result.errors %}
+              <li class="error">{{ error }}</li>
+            {% endfor %}
+          </ul>
+        </section>
+      {% endif %}
+
+      {% if category_breakdown.rows %}
+        <section>
+          <h2>Per-Category Breakdown</h2>
+          <p class="muted">
+            Mean score by question category. Cells show <strong>score</strong>
+            (n successful). Skipped cells show &ldquo;&mdash;&rdquo; because the
+            metric is not applicable to that category.
+          </p>
+          <div style="overflow-x: auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th>Cases</th>
+                  {% for metric_name in category_breakdown.metric_names %}
+                    <th>{{ metric_name }}</th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in category_breakdown.rows %}
+                  <tr>
+                    <td>
+                      <span class="badge badge-route-{{ row.category }}">{{ row.label }}</span>
+                    </td>
+                    <td>{{ row.case_count }}</td>
+                    {% for cell in row.cells %}
+                      <td>
+                        {% if cell.mean is not none %}
+                          <span class="badge badge-{{ cell.mean|score_class }}">
+                            {{ "%.3f"|format(cell.mean) }}
+                          </span>
+                          <span class="muted">&nbsp;(n={{ cell.n }})</span>
+                          {% if cell.error_count > 0 %}
+                            <span class="badge badge-status-err">{{ cell.error_count }} err</span>
+                          {% endif %}
+                        {% else %}
+                          <span class="muted">&mdash;</span>
+                        {% endif %}
+                      </td>
+                    {% endfor %}
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      {% endif %}
+
+      <section>
+        <h2>Highlighted Failure Modes</h2>
+        {% if failure_modes %}
+          <p class="muted">
+            Cases that need attention: metric errors, zero-score metrics, refusal
+            disagreements, SQL errors, and missing routes.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Case</th>
+                <th>Category</th>
+                <th>Issue</th>
+                <th>Metric</th>
+                <th>Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for issue in failure_modes %}
+                <tr>
+                  <td><strong>{{ issue.case_id }}</strong></td>
+                  <td>
+                    <span class="badge badge-route-{{ issue.category_key }}">
+                      {{ issue.category }}
+                    </span>
+                  </td>
+                  <td>
+                    {% if issue.issue_type == "metric_error" %}
+                      <span class="badge badge-status-err">Metric error</span>
+                    {% elif issue.issue_type == "metric_zero" %}
+                      <span class="badge badge-status-warn">Zero score</span>
+                    {% elif issue.issue_type == "refusal_disagreement" %}
+                      <span class="badge badge-status-err">Refusal disagreement</span>
+                    {% elif issue.issue_type == "sql_error" %}
+                      <span class="badge badge-status-err">SQL error</span>
+                    {% elif issue.issue_type == "missing_route" %}
+                      <span class="badge badge-status-err">Missing route</span>
+                    {% else %}
+                      <span class="badge badge-status-warn">{{ issue.issue_type }}</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if issue.metric_name %}
+                      <code>{{ issue.metric_name }}</code>
+                    {% endif %}
+                  </td>
+                  <td>{{ issue.explanation }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="muted">No highlighted failure modes.</p>
+        {% endif %}
+      </section>
+
+      <section>
+        <h2>Cases</h2>
+        {% for case_result in result.case_results %}
+          {% set route_decision = case_result.response.routing_decision %}
+          {% set route_key = route_decision|route_key %}
+          <details class="case-card">
+            <summary>
+              <span class="case-id">{{ case_result.case_id }}</span>
+              <span class="badge badge-route-{{ route_key }}">{{ route_decision|route_label }}</span>
+              <span class="muted">&nbsp;{{ case_result.metric_results|length }} metrics</span>
+              {% set case_metric_errors = case_result.metric_results
+                | selectattr("error")
+                | list
+                | length %}
+              {% if case_metric_errors > 0 %}
+                <span class="badge badge-status-err">{{ case_metric_errors }} metric error(s)</span>
+              {% endif %}
+              {% if case_result.response.refused %}
+                <span class="badge badge-status-warn">refused</span>
+              {% endif %}
+            </summary>
+
+            <div class="case-section">
+              <h4>Question</h4>
+              <p>{{ case_result.question }}</p>
+            </div>
+
+            <div class="case-section">
+              <h4>Routing</h4>
+              <p>
+                <span class="badge badge-route-{{ route_key }}">
+                  {{ route_decision|route_label }}
+                </span>
+                <span class="muted">&nbsp;({{ route_key }})</span>
+              </p>
+            </div>
+
+            <div class="case-section">
+              <h4>Answer</h4>
+              <p>{{ case_result.response.answer }}</p>
+            </div>
+
+            <div class="case-section">
+              <h4>SQL Evidence</h4>
+              {% if case_result.response.sql_result %}
+                <p><strong>Query:</strong> <code>{{ case_result.response.sql_result.query }}</code></p>
+                {% if case_result.response.sql_result.error %}
+                  <p class="error">{{ case_result.response.sql_result.error }}</p>
+                {% endif %}
+                <pre>{{ case_result.response.sql_result.rows|json_pretty }}</pre>
+              {% else %}
+                <p class="empty">No SQL evidence for this case.</p>
+              {% endif %}
+            </div>
+
+            <div class="case-section">
+              <h4>Retrieved Evidence</h4>
+              {% if case_result.response.retrieved_docs %}
+                <ul class="doc-list">
+                  {% for doc in case_result.response.retrieved_docs %}
+                    <li>
+                      <strong>{{ doc.id }}</strong>
+                      {% if doc.metadata.title %}
+                        <span class="muted"> &mdash; {{ doc.metadata.title }}</span>
+                      {% endif %}
+                      <p>{{ doc.content|short }}</p>
+                    </li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                <p class="empty">No retrieved documents for this case.</p>
+              {% endif %}
+            </div>
+
+            <div class="case-section">
+              <h4>Metric Results</h4>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Metric</th>
+                    <th>Value</th>
+                    <th>Error</th>
+                    <th>Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for metric in case_result.metric_results %}
+                    <tr{% if metric.error %} class="metric-error"{% endif %}>
+                      <td>{{ metric.metric_name }}</td>
+                      <td>
+                        <span class="badge badge-{{ metric.value|score_class }}">
+                          {{ "%.3f"|format(metric.value) }}
+                        </span>
+                      </td>
+                      <td>
+                        {% if metric.error %}
+                          <span class="error">{{ metric.error }}</span>
+                        {% endif %}
+                      </td>
+                      <td><pre>{{ metric.details|json_pretty }}</pre></td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        {% endfor %}
+      </section>
+
+      <section class="footnotes">
+        <h2>Notes</h2>
+        <ul>
+          <li>Generated reports load styling and charts from the Pico.css and Chart.js CDNs;
+              tables remain readable even if JavaScript is disabled.</li>
+          <li>The deterministic demo retriever uses lexical search over <code>article_chunks</code>;
+              it is not production vector retrieval.</li>
+          <li>Prefix retrieval metrics evaluate article-level matches: stable article IDs before
+              <code>#</code>, not exact chunk IDs, because chunk indexes can shift across runs.</li>
+          <li>The seed database is intentionally small, so some demo SQL paths use
+              deterministic literal-row fallbacks for facts outside the offline fixture.</li>
+          <li>Skipped cases are not failures; they indicate that a metric is not applicable
+              for that case.</li>
+        </ul>
+      </section>
+    </main>
+
+    {% if metric_summaries %}
+      <script id="rageval-metric-data" type="application/json">
+        {{ {
+          "labels": metric_summaries|map(attribute="metric_name")|list,
+          "scores": metric_summaries|map(attribute="score")|list,
+          "successful": coverage_data|map(attribute="successful")|list,
+          "errors": coverage_data|map(attribute="errors")|list,
+          "skipped": coverage_data|map(attribute="skipped")|list
+        }|tojson }}
+      </script>
+      <script id="rageval-route-data" type="application/json">
+        {{ {
+          "labels": route_distribution|map(attribute="label")|list,
+          "keys": route_distribution|map(attribute="key")|list,
+          "counts": route_distribution|map(attribute="count")|list
+        }|tojson }}
+      </script>
+      <script>
+        (function () {
+          if (typeof Chart === "undefined") return;
+          var metricNode = document.getElementById("rageval-metric-data");
+          var routeNode = document.getElementById("rageval-route-data");
+          var metricData = metricNode ? JSON.parse(metricNode.textContent) : null;
+          var routeData = routeNode ? JSON.parse(routeNode.textContent) : null;
+          var routeColors = {
+            factual: "#2a6ed4",
+            analytical: "#2f9e6e",
+            hybrid: "#7b3eb6",
+            unanswerable: "#6b6b6b",
+            missing: "#b42318"
+          };
+
+          if (metricData && document.getElementById("aggregate-chart")) {
+            new Chart(document.getElementById("aggregate-chart"), {
+              type: "bar",
+              data: {
+                labels: metricData.labels,
+                datasets: [{ label: "Score", data: metricData.scores }]
+              },
+              options: {
+                indexAxis: "y",
+                scales: { x: { min: 0, max: 1 } },
+                plugins: { legend: { display: false } }
+              }
+            });
+          }
+
+          if (metricData && document.getElementById("coverage-chart")) {
+            new Chart(document.getElementById("coverage-chart"), {
+              type: "bar",
+              data: {
+                labels: metricData.labels,
+                datasets: [
+                  { label: "Successful", data: metricData.successful, backgroundColor: "#2f9e6e" },
+                  { label: "Errors", data: metricData.errors, backgroundColor: "#b42318" },
+                  { label: "Skipped", data: metricData.skipped, backgroundColor: "#999999" }
+                ]
+              },
+              options: {
+                indexAxis: "y",
+                scales: { x: { stacked: true }, y: { stacked: true } }
+              }
+            });
+          }
+
+          if (routeData && document.getElementById("route-chart")) {
+            var bg = (routeData.keys || []).map(function (k) {
+              return routeColors[k] || "#999999";
+            });
+            new Chart(document.getElementById("route-chart"), {
+              type: "doughnut",
+              data: {
+                labels: routeData.labels,
+                datasets: [{ data: routeData.counts, backgroundColor: bg }]
+              },
+              options: { plugins: { legend: { position: "bottom" } } }
+            });
+          }
+        })();
+      </script>
+    {% endif %}
+    <footer class="container">
+      <p class="muted">
+        Styling and charts load from Pico.css and Chart.js CDNs. Generated
+        reports should not include secrets or raw cached article pages.
+      </p>
+    </footer>
+  </body>
+</html>

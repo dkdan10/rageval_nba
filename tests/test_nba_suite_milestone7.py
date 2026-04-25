@@ -49,6 +49,7 @@ def test_repo_authored_manifest_summaries_support_known_fetch_gap_retrieval(
     agent = RAGAgent(db_path)
 
     checks = {
+        "What is VORP and how is it calculated?": "bbref-glossary",
         "What does play type analysis reveal about NBA offenses?": "synergy-play-types",
         "What are the analytical arguments for and against zone defense in the NBA?": (
             "thinking-basketball-zone-defense"

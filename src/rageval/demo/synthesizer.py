@@ -68,16 +68,55 @@ def _deterministic_answer(
 ) -> str:
     parts: list[str] = []
     if sql_result is not None and sql_result.error is None and sql_result.rows:
-        parts.append(f"SQL evidence: {sql_result.rows} [sql]")
+        parts.append(f"Per the structured stats: {_summarize_rows(sql_result.rows)}. [sql]")
     elif sql_result is not None and sql_result.error is not None:
-        parts.append(f"SQL evidence unavailable: {sql_result.error} [sql]")
+        parts.append(f"SQL evidence unavailable: {sql_result.error}. [sql]")
 
-    for doc in docs:
-        snippet = " ".join(doc.content.split())
-        if len(snippet) > 240:
-            snippet = f"{snippet[:237]}..."
-        parts.append(f"{snippet} [article:{doc.id}]")
+    for doc in docs[:3]:
+        parts.append(_format_article(doc))
 
     if not parts:
         return "The provided sources are insufficient to answer this question."
     return " ".join(parts)
+
+
+def _format_article(doc: Document) -> str:
+    snippet = " ".join(doc.content.split())
+    if len(snippet) > 120:
+        snippet = f"{snippet[:117]}..."
+    title = doc.metadata.get("title")
+    if isinstance(title, str) and title:
+        return f"From “{title}”: {snippet} [article:{doc.id}]"
+    return f"Article evidence: {snippet} [article:{doc.id}]"
+
+
+def _summarize_rows(rows: list[dict[str, object]], max_rows: int = 2) -> str:
+    rendered: list[str] = []
+    for row in rows[:max_rows]:
+        if not row:
+            continue
+        rendered.append(_format_row(row))
+    if len(rows) > max_rows:
+        rendered.append(f"{len(rows) - max_rows} more row(s)")
+    return "; ".join(rendered)
+
+
+def _format_row(row: dict[str, object]) -> str:
+    items = list(row.items())
+    first_key, first_value = items[0]
+    rest = items[1:]
+    head = _format_value(first_value)
+    if not rest:
+        return head
+    tail = ", ".join(f"{_humanize_key(k)} {_format_value(v)}" for k, v in rest)
+    return f"{head} ({tail})"
+
+
+def _humanize_key(key: str) -> str:
+    return key.replace("_", " ")
+
+
+def _format_value(value: object) -> str:
+    if isinstance(value, float):
+        return f"{value:g}"
+    return str(value)

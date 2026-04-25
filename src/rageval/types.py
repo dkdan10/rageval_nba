@@ -120,6 +120,7 @@ class CaseResult(BaseModel):
 
     case_id: str
     question: str
+    question_type: QuestionType | None = None
     response: RAGResponse
     metric_results: list[MetricResult]
 

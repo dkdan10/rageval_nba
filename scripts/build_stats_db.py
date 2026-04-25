@@ -2,7 +2,10 @@
 
 Two modes:
 
-* ``real`` (default) — calls nba_api to pull real data for 2020-21 through
+* ``seed`` (default) — fast, deterministic, offline fixture. Inserts a small
+  hand-curated dataset useful for tests and demos.
+
+* ``real`` — calls nba_api to pull real data for 2020-21 through
   2024-25, with retries and idempotent inserts. Saves raw API responses to
   ``data/raw/`` for reproducibility. Logs each run to ``ingestion_log``.
 
@@ -19,13 +22,9 @@ Two modes:
   Expected rough counts: ~1500 players, ~30 teams, ~6000 games,
   ~7500 player-season rows, ~350000 player-game stat rows.
 
-* ``seed`` — fast, deterministic, offline fixture. Inserts a small
-  hand-curated dataset useful for tests and demos. Pass ``--mode seed``
-  explicitly.
-
 Run:
-    uv run python scripts/build_stats_db.py               # real ingestion
-    uv run python scripts/build_stats_db.py --mode seed   # offline fixture
+    uv run python scripts/build_stats_db.py               # offline seed fixture
+    uv run python scripts/build_stats_db.py --mode seed   # offline seed fixture
     uv run python scripts/build_stats_db.py --mode real --seasons 2023-24
 """
 
@@ -461,6 +460,33 @@ def _save_raw(name: str, payload: Any, raw_dir: Path) -> None:
     )
 
 
+def _load_raw(name: str, raw_dir: Path) -> Any:
+    return json.loads((raw_dir / f"{name}.json").read_text(encoding="utf-8"))
+
+
+def _fetch_or_load_raw(
+    name: str,
+    raw_dir: Path,
+    fetch_fn: Any,
+    *,
+    resume_raw: bool = False,
+    rate_limit_seconds: float = 1.0,
+) -> Any:
+    raw_path = raw_dir / f"{name}.json"
+    if resume_raw and raw_path.exists():
+        try:
+            print(f"  [{name}] using cached raw: {raw_path}")
+            return _load_raw(name, raw_dir)
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"  [{name}] cached raw is unreadable ({exc}); refetching")
+
+    if rate_limit_seconds > 0:
+        time.sleep(rate_limit_seconds)
+    payload = fetch_fn()
+    _save_raw(name, payload, raw_dir)
+    return payload
+
+
 def _row_dicts(result_set: Any) -> list[dict[str, Any]]:
     headers: list[str] = list(result_set["headers"])
     rows: list[list[Any]] = list(result_set["rowSet"])
@@ -506,6 +532,10 @@ def _game_type_from_id(game_id: int) -> str:
 def _fetch_advanced_player_stats(
     season_id: str,
     raw_dir: Path,
+    *,
+    timeout_seconds: float = 30.0,
+    rate_limit_seconds: float = 1.0,
+    resume_raw: bool = False,
 ) -> dict[tuple[int, int], dict[str, Any]]:
     """Return {(player_id, team_id): {ts_pct, efg_pct, usg_pct}} from the Advanced endpoint.
 
@@ -514,15 +544,22 @@ def _fetch_advanced_player_stats(
     """
     from nba_api.stats.endpoints import leaguedashplayerstats  # type: ignore[import-untyped]
 
-    result = _with_retries(
-        lambda sid=season_id: leaguedashplayerstats.LeagueDashPlayerStats(
-            season=sid,
-            measure_type_detailed_defense="Advanced",
-            per_mode_detailed="PerGame",
-        ).get_dict(),
-        label=f"player_adv_{season_id}",
+    raw_key = f"player_stats_adv_{season_id}"
+    result = _fetch_or_load_raw(
+        raw_key,
+        raw_dir,
+        lambda sid=season_id: _with_retries(
+            lambda: leaguedashplayerstats.LeagueDashPlayerStats(
+                season=sid,
+                measure_type_detailed_defense="Advanced",
+                per_mode_detailed="PerGame",
+                timeout=timeout_seconds,
+            ).get_dict(),
+            label=f"player_adv_{season_id}",
+        ),
+        resume_raw=resume_raw,
+        rate_limit_seconds=rate_limit_seconds,
     )
-    _save_raw(f"player_stats_adv_{season_id}", result, raw_dir)
     rows = _row_dicts(result["resultSets"][0])
     return {
         (int(r["PLAYER_ID"]), int(r["TEAM_ID"])): {
@@ -537,19 +574,29 @@ def _fetch_advanced_player_stats(
 def _fetch_advanced_team_stats(
     season_id: str,
     raw_dir: Path,
+    *,
+    timeout_seconds: float = 30.0,
+    rate_limit_seconds: float = 1.0,
+    resume_raw: bool = False,
 ) -> dict[int, dict[str, Any]]:
     """Return {team_id: {pace, off_rating, def_rating, net_rating, opp_ppg}}."""
     from nba_api.stats.endpoints import leaguedashteamstats
 
-    adv_result = _with_retries(
-        lambda sid=season_id: leaguedashteamstats.LeagueDashTeamStats(
-            season=sid,
-            measure_type_detailed_defense="Advanced",
-            per_mode_detailed="PerGame",
-        ).get_dict(),
-        label=f"team_adv_{season_id}",
+    adv_result = _fetch_or_load_raw(
+        f"team_stats_adv_{season_id}",
+        raw_dir,
+        lambda sid=season_id: _with_retries(
+            lambda: leaguedashteamstats.LeagueDashTeamStats(
+                season=sid,
+                measure_type_detailed_defense="Advanced",
+                per_mode_detailed="PerGame",
+                timeout=timeout_seconds,
+            ).get_dict(),
+            label=f"team_adv_{season_id}",
+        ),
+        resume_raw=resume_raw,
+        rate_limit_seconds=rate_limit_seconds,
     )
-    _save_raw(f"team_stats_adv_{season_id}", adv_result, raw_dir)
     adv_rows = _row_dicts(adv_result["resultSets"][0])
     combined: dict[int, dict[str, Any]] = {
         int(r["TEAM_ID"]): {
@@ -562,15 +609,21 @@ def _fetch_advanced_team_stats(
         for r in adv_rows
     }
 
-    opp_result = _with_retries(
-        lambda sid=season_id: leaguedashteamstats.LeagueDashTeamStats(
-            season=sid,
-            measure_type_detailed_defense="Opponent",
-            per_mode_detailed="PerGame",
-        ).get_dict(),
-        label=f"team_opp_{season_id}",
+    opp_result = _fetch_or_load_raw(
+        f"team_stats_opp_{season_id}",
+        raw_dir,
+        lambda sid=season_id: _with_retries(
+            lambda: leaguedashteamstats.LeagueDashTeamStats(
+                season=sid,
+                measure_type_detailed_defense="Opponent",
+                per_mode_detailed="PerGame",
+                timeout=timeout_seconds,
+            ).get_dict(),
+            label=f"team_opp_{season_id}",
+        ),
+        resume_raw=resume_raw,
+        rate_limit_seconds=rate_limit_seconds,
     )
-    _save_raw(f"team_stats_opp_{season_id}", opp_result, raw_dir)
     for r in _row_dicts(opp_result["resultSets"][0]):
         tid = int(r["TEAM_ID"])
         if tid in combined:
@@ -584,6 +637,10 @@ def _fetch_and_insert_games(
     season_id: str,
     con: sqlite3.Connection,
     raw_dir: Path,
+    *,
+    timeout_seconds: float = 30.0,
+    rate_limit_seconds: float = 1.0,
+    resume_raw: bool = False,
 ) -> int:
     """Fetch LeagueGameLog for regular season + playoffs, insert idempotently.
 
@@ -597,14 +654,20 @@ def _fetch_and_insert_games(
         ("Playoffs", "playoff"),
     ]:
         raw_key = f"gamelog_{season_id}_{game_type_label}"
-        result = _with_retries(
-            lambda sid=season_id, st=season_type: leaguegamelog.LeagueGameLog(
-                season=sid,
-                season_type_all_star=st,
-            ).get_dict(),
-            label=raw_key,
+        result = _fetch_or_load_raw(
+            raw_key,
+            raw_dir,
+            lambda sid=season_id, st=season_type, label=raw_key: _with_retries(
+                lambda: leaguegamelog.LeagueGameLog(
+                    season=sid,
+                    season_type_all_star=st,
+                    timeout=timeout_seconds,
+                ).get_dict(),
+                label=label,
+            ),
+            resume_raw=resume_raw,
+            rate_limit_seconds=rate_limit_seconds,
         )
-        _save_raw(raw_key, result, raw_dir)
         rows = _row_dicts(result["resultSets"][0])
 
         # Pair home/away rows by game_id
@@ -653,6 +716,10 @@ def _fetch_and_insert_player_game_stats(
     season_id: str,
     con: sqlite3.Connection,
     raw_dir: Path,
+    *,
+    timeout_seconds: float = 30.0,
+    rate_limit_seconds: float = 1.0,
+    resume_raw: bool = False,
 ) -> int:
     """Fetch PlayerGameLogs for regular season + playoffs, insert idempotently.
 
@@ -672,14 +739,20 @@ def _fetch_and_insert_player_game_stats(
         raw_key = (
             f"player_gamelogs_{season_id}_{season_type.replace(' ', '_').lower()}"
         )
-        result = _with_retries(
-            lambda sid=season_id, st=season_type: playergamelogs.PlayerGameLogs(
-                season_nullable=sid,
-                season_type_nullable=st,
-            ).get_dict(),
-            label=raw_key,
+        result = _fetch_or_load_raw(
+            raw_key,
+            raw_dir,
+            lambda sid=season_id, st=season_type, label=raw_key: _with_retries(
+                lambda: playergamelogs.PlayerGameLogs(
+                    season_nullable=sid,
+                    season_type_nullable=st,
+                    timeout=timeout_seconds,
+                ).get_dict(),
+                label=label,
+            ),
+            resume_raw=resume_raw,
+            rate_limit_seconds=rate_limit_seconds,
         )
-        _save_raw(raw_key, result, raw_dir)
         rows = _row_dicts(result["resultSets"][0])
 
         # Ensure all referenced players exist. PlayerGameLogs may include
@@ -759,6 +832,10 @@ def build_real(
     db_path: Path = DB_PATH,
     seasons: list[str] | None = None,
     raw_dir: Path = RAW_DIR,
+    *,
+    timeout_seconds: float = 30.0,
+    rate_limit_seconds: float = 1.0,
+    resume_raw: bool = False,
 ) -> dict[str, int]:
     """Pull real NBA data via nba_api. Returns a dict of {table: rows_added}.
 
@@ -786,8 +863,13 @@ def build_real(
         _init_schema(con)
         with con:
             # --- teams ---
-            teams_raw = static_teams.get_teams()
-            _save_raw("teams", teams_raw, raw_dir)
+            teams_raw = _fetch_or_load_raw(
+                "teams",
+                raw_dir,
+                static_teams.get_teams,
+                resume_raw=resume_raw,
+                rate_limit_seconds=rate_limit_seconds,
+            )
             team_rows: list[tuple[Any, ...]] = []
             for t in teams_raw:
                 abbr = t["abbreviation"]
@@ -818,18 +900,30 @@ def build_real(
 
             for season_id in seasons:
                 print(f"  season {season_id}: fetching player stats (base) ...")
-                ps = _with_retries(
-                    lambda sid=season_id: leaguedashplayerstats.LeagueDashPlayerStats(
-                        season=sid,
-                        per_mode_detailed="PerGame",
-                    ).get_dict(),
-                    label=f"player_stats_{season_id}",
+                ps = _fetch_or_load_raw(
+                    f"player_stats_{season_id}",
+                    raw_dir,
+                    lambda sid=season_id, label=f"player_stats_{season_id}": _with_retries(
+                        lambda: leaguedashplayerstats.LeagueDashPlayerStats(
+                            season=sid,
+                            per_mode_detailed="PerGame",
+                            timeout=timeout_seconds,
+                        ).get_dict(),
+                        label=label,
+                    ),
+                    resume_raw=resume_raw,
+                    rate_limit_seconds=rate_limit_seconds,
                 )
-                _save_raw(f"player_stats_{season_id}", ps, raw_dir)
                 base_rows = _row_dicts(ps["resultSets"][0])
 
                 print(f"  season {season_id}: fetching player stats (advanced) ...")
-                adv_player = _fetch_advanced_player_stats(season_id, raw_dir)
+                adv_player = _fetch_advanced_player_stats(
+                    season_id,
+                    raw_dir,
+                    timeout_seconds=timeout_seconds,
+                    rate_limit_seconds=rate_limit_seconds,
+                    resume_raw=resume_raw,
+                )
 
                 player_tuples: list[tuple[Any, ...]] = []
                 pss_tuples: list[tuple[Any, ...]] = []
@@ -892,18 +986,30 @@ def build_real(
                     pss_count += len(pss_tuples)
 
                 print(f"  season {season_id}: fetching team stats (base) ...")
-                ts = _with_retries(
-                    lambda sid=season_id: leaguedashteamstats.LeagueDashTeamStats(
-                        season=sid,
-                        per_mode_detailed="PerGame",
-                    ).get_dict(),
-                    label=f"team_stats_{season_id}",
+                ts = _fetch_or_load_raw(
+                    f"team_stats_{season_id}",
+                    raw_dir,
+                    lambda sid=season_id, label=f"team_stats_{season_id}": _with_retries(
+                        lambda: leaguedashteamstats.LeagueDashTeamStats(
+                            season=sid,
+                            per_mode_detailed="PerGame",
+                            timeout=timeout_seconds,
+                        ).get_dict(),
+                        label=label,
+                    ),
+                    resume_raw=resume_raw,
+                    rate_limit_seconds=rate_limit_seconds,
                 )
-                _save_raw(f"team_stats_{season_id}", ts, raw_dir)
                 trows = _row_dicts(ts["resultSets"][0])
 
                 print(f"  season {season_id}: fetching team stats (advanced + opponent) ...")
-                adv_team = _fetch_advanced_team_stats(season_id, raw_dir)
+                adv_team = _fetch_advanced_team_stats(
+                    season_id,
+                    raw_dir,
+                    timeout_seconds=timeout_seconds,
+                    rate_limit_seconds=rate_limit_seconds,
+                    resume_raw=resume_raw,
+                )
 
                 tss_tuples = [
                     (
@@ -932,10 +1038,24 @@ def build_real(
                     tss_count += len(tss_tuples)
 
                 print(f"  season {season_id}: fetching games ...")
-                games_count += _fetch_and_insert_games(season_id, con, raw_dir)
+                games_count += _fetch_and_insert_games(
+                    season_id,
+                    con,
+                    raw_dir,
+                    timeout_seconds=timeout_seconds,
+                    rate_limit_seconds=rate_limit_seconds,
+                    resume_raw=resume_raw,
+                )
 
                 print(f"  season {season_id}: fetching player game logs ...")
-                pgs_count += _fetch_and_insert_player_game_stats(season_id, con, raw_dir)
+                pgs_count += _fetch_and_insert_player_game_stats(
+                    season_id,
+                    con,
+                    raw_dir,
+                    timeout_seconds=timeout_seconds,
+                    rate_limit_seconds=rate_limit_seconds,
+                    resume_raw=resume_raw,
+                )
 
             counts["players"] = player_count
             counts["player_season_stats"] = pss_count
@@ -951,7 +1071,11 @@ def build_real(
                     datetime.now(UTC).isoformat(),
                     "nba_api",
                     total,
-                    f"seasons={','.join(seasons)}; counts={counts}",
+                    (
+                        f"seasons={','.join(seasons)}; resume_raw={resume_raw}; "
+                        f"timeout_seconds={timeout_seconds}; "
+                        f"rate_limit_seconds={rate_limit_seconds}; counts={counts}"
+                    ),
                 ),
             )
         print(f"Database built (real mode): {db_path}")
@@ -971,10 +1095,10 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument(
         "--mode",
         choices=["seed", "real"],
-        default="real",
+        default="seed",
         help=(
-            "real = pull via nba_api (default, requires network). "
-            "seed = fast offline fixture for tests."
+            "seed = fast offline fixture for tests/demos (default). "
+            "real = pull via nba_api, requires network."
         ),
     )
     p.add_argument("--db", type=Path, default=DB_PATH)
@@ -985,6 +1109,23 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         default=REAL_SEASONS,
         help="Seasons for real mode. Default: 2020-21 through 2024-25.",
     )
+    p.add_argument(
+        "--timeout-seconds",
+        type=float,
+        default=30.0,
+        help="Timeout passed to nba_api endpoint constructors in real mode.",
+    )
+    p.add_argument(
+        "--rate-limit-seconds",
+        type=float,
+        default=1.0,
+        help="Seconds to sleep before each real-mode network fetch.",
+    )
+    p.add_argument(
+        "--resume-raw",
+        action="store_true",
+        help="Reuse existing raw JSON files from --raw before calling nba_api.",
+    )
     return p.parse_args(argv)
 
 
@@ -993,7 +1134,14 @@ def main(argv: list[str] | None = None) -> None:
     if args.mode == "seed":
         build(db_path=args.db)
     else:
-        build_real(db_path=args.db, seasons=args.seasons, raw_dir=args.raw)
+        build_real(
+            db_path=args.db,
+            seasons=args.seasons,
+            raw_dir=args.raw,
+            timeout_seconds=args.timeout_seconds,
+            rate_limit_seconds=args.rate_limit_seconds,
+            resume_raw=args.resume_raw,
+        )
 
 
 if __name__ == "__main__":

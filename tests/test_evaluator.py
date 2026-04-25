@@ -85,6 +85,13 @@ class ExplodingMetric:
         raise ValueError("metric blew up")
 
 
+class SkippingMetric:
+    metric_name = "skipping_score"
+
+    def __call__(self, case: TestCase, response: RAGResponse) -> None:  # noqa: ARG002
+        return None
+
+
 async def test_evaluate_successful_multiple_cases() -> None:
     system = FakeSystem()
     evaluator = Evaluator(metrics=[SyncMetric()])
@@ -122,6 +129,16 @@ async def test_errored_metric_results_are_excluded_from_aggregates() -> None:
     assert failed.value == 0.0
     assert failed.error is not None
     assert "metric blew up" in failed.error
+
+
+async def test_none_metric_result_is_skipped() -> None:
+    result = await Evaluator(metrics=[SyncMetric(), SkippingMetric()]).evaluate(
+        FakeSystem(),
+        _suite(1),
+    )
+
+    assert [m.metric_name for m in result.case_results[0].metric_results] == ["sync_score"]
+    assert result.aggregate_scores == {"sync_score": 1.0}
 
 
 async def test_total_cost_and_duration_are_populated() -> None:

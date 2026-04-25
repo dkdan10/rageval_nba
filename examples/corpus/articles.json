@@ -17,7 +17,7 @@
     "topics": ["glossary", "VORP", "BPM", "usage rate", "true shooting percentage"],
     "storage_policy": "metadata_plus_repo_authored_summary",
     "notes": "Stable glossary source for advanced stat definitions. Includes original repo-authored retrieval summary; do not commit copied glossary text.",
-    "full_text": "Repo-authored summary: VORP means Value Over Replacement Player. It estimates how much value a player adds above a replacement-level alternative, using box-score impact scaled to possessions and playing time. Usage rate estimates how often a player finishes or directly uses team possessions through shots, free throws, assists in some models, or turnovers, so it gives context when comparing efficiency at different offensive loads. True shooting percentage improves on field goal percentage by accounting for threes and free throws."
+    "full_text": "Repo-authored summary: VORP means Value Over Replacement Player. VORP is calculated from Box Plus/Minus style box-score impact, replacement level, possessions, and playing time to estimate value above a replacement player. Box Plus/Minus, or BPM, estimates a player's contribution per 100 possessions from box-score inputs and has limitations because it cannot directly see defensive positioning, screen assists, spacing, or on/off context. Usage rate estimates how often a player finishes or directly uses team possessions through shots, free throws, assists in some models, or turnovers, so it gives context when comparing efficiency at different offensive loads. True shooting percentage improves on field goal percentage by accounting for threes and free throws."
   },
   {
     "article_id": "ctg-pace-adjustment",
