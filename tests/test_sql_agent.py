@@ -1,5 +1,6 @@
 """Tests for Milestone 3.5: stats DB schema and SQLAgent."""
 
+import json
 import sqlite3
 from collections.abc import Generator
 from pathlib import Path
@@ -464,74 +465,155 @@ def test_article_tables_are_empty_on_seed_build(db: sqlite3.Connection) -> None:
 # Real-mode ingestion (mocked nba_api) — verifies the code path without network.
 # ---------------------------------------------------------------------------
 
+# Shared mock data constants
+_BOS_ID = 1610612738
+_LAL_ID = 1610612747
+_GAME_ID_STR = "0022300001"
+_GAME_ID_INT = int(_GAME_ID_STR)  # leading zeros dropped: 22300001
 
-def test_build_real_mocked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Exercise build_real with mocked nba_api endpoints + static teams."""
+
+def _setup_nba_api_mocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Install all nba_api mocks needed by build_real (no network required)."""
     import sys
+    from typing import Any
 
-    # Stub nba_api modules *before* build_real imports them.
     fake_static_teams = MagicMock()
     fake_static_teams.get_teams = lambda: [
-        {
-            "id": 1610612738,
-            "abbreviation": "BOS",
-            "full_name": "Boston Celtics",
-            "city": "Boston",
-            "nickname": "Celtics",
-        }
+        {"id": _BOS_ID, "abbreviation": "BOS", "full_name": "Boston Celtics", "city": "Boston"},
+        {"id": _LAL_ID, "abbreviation": "LAL", "full_name": "Los Angeles Lakers",
+         "city": "Los Angeles"},
     ]
 
     fake_player_stats = MagicMock()
 
-    def _player_stats_cls(season: str) -> MagicMock:  # noqa: ARG001
+    def _player_stats_cls(
+        season: str,  # noqa: ARG001
+        measure_type_detailed_defense: str = "Base",
+        **kwargs: Any,  # noqa: ARG001
+    ) -> MagicMock:
         inst = MagicMock()
-        inst.get_dict.return_value = {
-            "resultSets": [
-                {
+        if measure_type_detailed_defense == "Advanced":
+            inst.get_dict.return_value = {
+                "resultSets": [{
+                    "headers": ["PLAYER_ID", "TEAM_ID", "TS_PCT", "EFG_PCT", "USG_PCT"],
+                    "rowSet": [[1, _BOS_ID, 0.600, 0.540, 0.280]],
+                }]
+            }
+        else:
+            inst.get_dict.return_value = {
+                "resultSets": [{
                     "headers": [
                         "PLAYER_ID", "PLAYER_NAME", "TEAM_ID",
                         "GP", "GS", "MIN", "PTS", "REB", "AST",
                         "STL", "BLK", "TOV", "FG_PCT", "FG3_PCT", "FT_PCT",
                     ],
-                    "rowSet": [
-                        [
-                            1,
-                            "Test Player",
-                            1610612738,
-                            70, 70, 34.0, 25.0, 8.0, 5.0,
-                            1.1, 0.5, 2.5, 0.5, 0.38, 0.85,
-                        ]
-                    ],
-                }
-            ]
-        }
+                    "rowSet": [[1, "Test Player", _BOS_ID, 70, 70, 34.0, 25.0, 8.0, 5.0,
+                                1.1, 0.5, 2.5, 0.5, 0.38, 0.85]],
+                }]
+            }
         return inst
 
     fake_player_stats.LeagueDashPlayerStats = _player_stats_cls
 
     fake_team_stats = MagicMock()
 
-    def _team_stats_cls(season: str) -> MagicMock:  # noqa: ARG001
+    def _team_stats_cls(
+        season: str,  # noqa: ARG001
+        measure_type_detailed_defense: str = "Base",
+        **kwargs: Any,  # noqa: ARG001
+    ) -> MagicMock:
         inst = MagicMock()
-        inst.get_dict.return_value = {
-            "resultSets": [
-                {
+        if measure_type_detailed_defense == "Advanced":
+            inst.get_dict.return_value = {
+                "resultSets": [{
+                    "headers": ["TEAM_ID", "PACE", "OFF_RATING", "DEF_RATING", "NET_RATING"],
+                    "rowSet": [
+                        [_BOS_ID, 99.5, 118.0, 112.0, 6.0],
+                        [_LAL_ID, 100.0, 115.0, 114.0, 1.0],
+                    ],
+                }]
+            }
+        elif measure_type_detailed_defense == "Opponent":
+            inst.get_dict.return_value = {
+                "resultSets": [{
+                    "headers": ["TEAM_ID", "OPP_PTS"],
+                    "rowSet": [[_BOS_ID, 112.0], [_LAL_ID, 114.5]],
+                }]
+            }
+        else:
+            inst.get_dict.return_value = {
+                "resultSets": [{
                     "headers": ["TEAM_ID", "W", "L", "PTS"],
-                    "rowSet": [[1610612738, 50, 32, 118.0]],
-                }
-            ]
-        }
+                    "rowSet": [[_BOS_ID, 50, 32, 118.0], [_LAL_ID, 45, 37, 115.0]],
+                }]
+            }
         return inst
 
     fake_team_stats.LeagueDashTeamStats = _team_stats_cls
 
-    # Build the fake nba_api package tree.
+    fake_gamelog = MagicMock()
+    gl_headers = ["GAME_ID", "TEAM_ID", "GAME_DATE", "MATCHUP", "PTS"]
+
+    def _gamelog_cls(
+        season: str,  # noqa: ARG001
+        season_type_all_star: str = "Regular Season",
+        **kwargs: Any,  # noqa: ARG001
+    ) -> MagicMock:
+        inst = MagicMock()
+        if season_type_all_star == "Regular Season":
+            inst.get_dict.return_value = {
+                "resultSets": [{
+                    "headers": gl_headers,
+                    "rowSet": [
+                        [_GAME_ID_STR, _BOS_ID, "2024-01-15", "BOS vs. LAL", 110],
+                        [_GAME_ID_STR, _LAL_ID, "2024-01-15", "LAL @ BOS",   98],
+                    ],
+                }]
+            }
+        else:
+            inst.get_dict.return_value = {"resultSets": [{"headers": gl_headers, "rowSet": []}]}
+        return inst
+
+    fake_gamelog.LeagueGameLog = _gamelog_cls
+
+    fake_playergamelogs = MagicMock()
+    pgl_headers = [
+        "GAME_ID", "PLAYER_ID", "PLAYER_NAME", "TEAM_ID", "MIN",
+        "PTS", "REB", "AST", "STL", "BLK", "TOV",
+        "FGM", "FGA", "FG3M", "FG3A", "FTM", "FTA", "PLUS_MINUS",
+    ]
+
+    def _pgl_cls(
+        season_nullable: str,  # noqa: ARG001
+        season_type_nullable: str = "Regular Season",
+        **kwargs: Any,  # noqa: ARG001
+    ) -> MagicMock:
+        inst = MagicMock()
+        if season_type_nullable == "Regular Season":
+            inst.get_dict.return_value = {
+                "resultSets": [{
+                    "headers": pgl_headers,
+                    "rowSet": [
+                        [_GAME_ID_STR, 1, "Test Player", _BOS_ID, "34:25",
+                         25, 8, 5, 1, 0, 2, 9, 18, 3, 7, 4, 5, 8],
+                    ],
+                }]
+            }
+        else:
+            inst.get_dict.return_value = {"resultSets": [{"headers": pgl_headers, "rowSet": []}]}
+        return inst
+
+    fake_playergamelogs.PlayerGameLogs = _pgl_cls
+
+    # Wire up the module tree.
     nba_api_mod = MagicMock()
     stats_mod = MagicMock()
     endpoints_mod = MagicMock()
     static_mod = MagicMock()
     endpoints_mod.leaguedashplayerstats = fake_player_stats
     endpoints_mod.leaguedashteamstats = fake_team_stats
+    endpoints_mod.leaguegamelog = fake_gamelog
+    endpoints_mod.playergamelogs = fake_playergamelogs
     static_mod.teams = fake_static_teams
     stats_mod.endpoints = endpoints_mod
     stats_mod.static = static_mod
@@ -547,47 +629,307 @@ def test_build_real_mocked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setitem(
         sys.modules, "nba_api.stats.endpoints.leaguedashteamstats", fake_team_stats
     )
+    monkeypatch.setitem(sys.modules, "nba_api.stats.endpoints.leaguegamelog", fake_gamelog)
+    monkeypatch.setitem(sys.modules, "nba_api.stats.endpoints.playergamelogs", fake_playergamelogs)
     monkeypatch.setitem(sys.modules, "nba_api.stats.static.teams", fake_static_teams)
 
+
+def test_build_real_mocked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Full build_real smoke test with all nba_api endpoints mocked."""
+    _setup_nba_api_mocks(monkeypatch)
     db_path = tmp_path / "nba.db"
     raw_dir = tmp_path / "raw"
-    counts = build_module.build_real(
-        db_path=db_path, seasons=["2023-24"], raw_dir=raw_dir
-    )
+    counts = build_module.build_real(db_path=db_path, seasons=["2023-24"], raw_dir=raw_dir)
 
-    assert counts["teams"] == 1
+    assert counts["teams"] == 2
     assert counts["players"] == 1
     assert counts["player_season_stats"] == 1
-    assert counts["team_season_stats"] == 1
+    assert counts["team_season_stats"] == 2
+    assert counts["games"] == 1
+    assert counts["player_game_stats"] == 1
 
-    # Raw API responses saved.
-    assert (raw_dir / "teams.json").exists()
-    assert (raw_dir / "player_stats_2023-24.json").exists()
-    assert (raw_dir / "team_stats_2023-24.json").exists()
+    # All raw API responses persisted to disk.
+    for fname in [
+        "teams.json",
+        "player_stats_2023-24.json",
+        "player_stats_adv_2023-24.json",
+        "team_stats_2023-24.json",
+        "team_stats_adv_2023-24.json",
+        "team_stats_opp_2023-24.json",
+        "gamelog_2023-24_regular.json",
+        "gamelog_2023-24_playoff.json",
+        "player_gamelogs_2023-24_regular_season.json",
+        "player_gamelogs_2023-24_playoffs.json",
+    ]:
+        assert (raw_dir / fname).exists(), f"Missing raw file: {fname}"
 
-    # Ingestion log has an nba_api row.
     con = sqlite3.connect(db_path)
     con.row_factory = sqlite3.Row
     try:
-        rows = con.execute(
-            "SELECT * FROM ingestion_log WHERE source = 'nba_api'"
-        ).fetchall()
+        # ingestion_log row
+        rows = con.execute("SELECT * FROM ingestion_log WHERE source='nba_api'").fetchall()
         assert len(rows) == 1
         assert rows[0]["records_added"] > 0
 
-        # Data actually landed.
-        assert con.execute("SELECT COUNT(*) FROM teams").fetchone()[0] == 1
-        player = con.execute(
-            "SELECT full_name, first_name, last_name FROM players"
-        ).fetchone()
+        # players
+        player = con.execute("SELECT full_name, first_name, last_name FROM players").fetchone()
         assert player["full_name"] == "Test Player"
+
+        # player_season_stats: base + advanced fields populated
         pss = con.execute(
-            "SELECT points_per_game, games_played FROM player_season_stats"
+            "SELECT points_per_game, games_played, true_shooting_pct, "
+            "effective_fg_pct, usage_rate FROM player_season_stats"
         ).fetchone()
         assert pss["points_per_game"] == 25.0
         assert pss["games_played"] == 70
+        assert pss["true_shooting_pct"] == pytest.approx(0.600)
+        assert pss["effective_fg_pct"] == pytest.approx(0.540)
+        assert pss["usage_rate"] == pytest.approx(0.280)
+
+        # games: home/away correctly parsed
+        assert con.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 1
+        game = con.execute(
+            "SELECT home_team_id, away_team_id, home_score, away_score, game_type FROM games"
+        ).fetchone()
+        assert game["home_team_id"] == _BOS_ID
+        assert game["away_team_id"] == _LAL_ID
+        assert game["home_score"] == 110
+        assert game["away_score"] == 98
+        assert game["game_type"] == "regular"
+
+        # player_game_stats: one row with correct stats and parsed minutes
+        assert con.execute("SELECT COUNT(*) FROM player_game_stats").fetchone()[0] == 1
+        pgs = con.execute(
+            "SELECT points, minutes, fg_made, fg3_made FROM player_game_stats"
+        ).fetchone()
+        assert pgs["points"] == 25
+        assert pgs["minutes"] == pytest.approx(34.0 + 25.0 / 60.0, abs=0.001)
+        assert pgs["fg_made"] == 9
+        assert pgs["fg3_made"] == 3
+
+        # team_season_stats: advanced fields populated
+        tss = con.execute(
+            "SELECT pace, offensive_rating, defensive_rating, net_rating, opp_points_per_game "
+            "FROM team_season_stats WHERE team_id=?", (_BOS_ID,)
+        ).fetchone()
+        assert tss["pace"] == pytest.approx(99.5)
+        assert tss["offensive_rating"] == pytest.approx(118.0)
+        assert tss["defensive_rating"] == pytest.approx(112.0)
+        assert tss["net_rating"] == pytest.approx(6.0)
+        assert tss["opp_points_per_game"] == pytest.approx(112.0)
     finally:
         con.close()
+
+
+def test_build_real_games_populated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Games table is populated with real-mode ingestion."""
+    _setup_nba_api_mocks(monkeypatch)
+    db_path = tmp_path / "nba.db"
+    build_module.build_real(db_path=db_path, seasons=["2023-24"], raw_dir=tmp_path / "raw")
+
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
+    try:
+        assert con.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 1
+        game = con.execute("SELECT game_date, season_id, game_type FROM games").fetchone()
+        assert game["game_date"] == "2024-01-15"
+        assert game["season_id"] == "2023-24"
+        assert game["game_type"] == "regular"
+    finally:
+        con.close()
+
+
+def test_build_real_player_game_stats_populated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """player_game_stats table is populated with real-mode ingestion."""
+    _setup_nba_api_mocks(monkeypatch)
+    db_path = tmp_path / "nba.db"
+    build_module.build_real(db_path=db_path, seasons=["2023-24"], raw_dir=tmp_path / "raw")
+
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
+    try:
+        assert con.execute("SELECT COUNT(*) FROM player_game_stats").fetchone()[0] == 1
+        row = con.execute(
+            "SELECT game_id, player_id, team_id, points, rebounds, assists, plus_minus "
+            "FROM player_game_stats"
+        ).fetchone()
+        assert row["game_id"] == _GAME_ID_INT
+        assert row["player_id"] == 1
+        assert row["team_id"] == _BOS_ID
+        assert row["points"] == 25
+        assert row["rebounds"] == 8
+        assert row["assists"] == 5
+        assert row["plus_minus"] == 8
+    finally:
+        con.close()
+
+
+def test_build_real_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Running build_real twice produces the same final row counts (no duplicates).
+
+    build_real always starts from a clean DB, so repeated runs are idempotent
+    in the sense that the final state is identical regardless of how many times
+    the script is invoked.
+    """
+    _setup_nba_api_mocks(monkeypatch)
+    db_path = tmp_path / "nba.db"
+    raw_dir = tmp_path / "raw"
+
+    counts1 = build_module.build_real(db_path=db_path, seasons=["2023-24"], raw_dir=raw_dir)
+    counts2 = build_module.build_real(db_path=db_path, seasons=["2023-24"], raw_dir=raw_dir)
+
+    # Final row counts are identical on every run.
+    assert counts1 == counts2
+
+    con = sqlite3.connect(db_path)
+    try:
+        assert con.execute("SELECT COUNT(*) FROM teams").fetchone()[0] == 2
+        assert con.execute("SELECT COUNT(*) FROM players").fetchone()[0] == 1
+        assert con.execute("SELECT COUNT(*) FROM player_season_stats").fetchone()[0] == 1
+        assert con.execute("SELECT COUNT(*) FROM team_season_stats").fetchone()[0] == 2
+        assert con.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 1
+        assert con.execute("SELECT COUNT(*) FROM player_game_stats").fetchone()[0] == 1
+        # One ingestion_log row per run (DB is rebuilt from scratch each time)
+        assert con.execute(
+            "SELECT COUNT(*) FROM ingestion_log WHERE source='nba_api'"
+        ).fetchone()[0] == 1
+    finally:
+        con.close()
+
+
+def test_build_real_raw_json_for_games_saved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Raw game log and player game log JSON files are saved to data/raw/."""
+    _setup_nba_api_mocks(monkeypatch)
+    raw_dir = tmp_path / "raw"
+    build_module.build_real(db_path=tmp_path / "nba.db", seasons=["2023-24"], raw_dir=raw_dir)
+
+    assert (raw_dir / "gamelog_2023-24_regular.json").exists()
+    assert (raw_dir / "gamelog_2023-24_playoff.json").exists()
+    assert (raw_dir / "player_gamelogs_2023-24_regular_season.json").exists()
+    assert (raw_dir / "player_gamelogs_2023-24_playoffs.json").exists()
+
+    # JSON files are valid
+    data = json.loads((raw_dir / "gamelog_2023-24_regular.json").read_text())
+    assert "resultSets" in data
+
+
+def test_build_real_ingestion_log_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ingestion_log row is written with correct source and positive record count."""
+    _setup_nba_api_mocks(monkeypatch)
+    db_path = tmp_path / "nba.db"
+    build_module.build_real(db_path=db_path, seasons=["2023-24"], raw_dir=tmp_path / "raw")
+
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
+    try:
+        row = con.execute("SELECT * FROM ingestion_log WHERE source='nba_api'").fetchone()
+        assert row is not None
+        assert row["source"] == "nba_api"
+        assert row["records_added"] > 0
+        assert row["run_at"] is not None
+        assert "2023-24" in (row["notes"] or "")
+    finally:
+        con.close()
+
+
+def test_build_real_advanced_stats_not_null(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TS%, EFG%, USG% are populated from the Advanced endpoint (not NULL)."""
+    _setup_nba_api_mocks(monkeypatch)
+    db_path = tmp_path / "nba.db"
+    build_module.build_real(db_path=db_path, seasons=["2023-24"], raw_dir=tmp_path / "raw")
+
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
+    try:
+        row = con.execute(
+            "SELECT true_shooting_pct, effective_fg_pct, usage_rate, "
+            "player_efficiency_rating, win_shares, box_plus_minus, vorp "
+            "FROM player_season_stats"
+        ).fetchone()
+        # Advanced fields from nba_api should be populated
+        assert row["true_shooting_pct"] is not None
+        assert row["effective_fg_pct"] is not None
+        assert row["usage_rate"] is not None
+        # Basketball Reference-only fields remain NULL
+        assert row["player_efficiency_rating"] is None
+        assert row["win_shares"] is None
+        assert row["box_plus_minus"] is None
+        assert row["vorp"] is None
+    finally:
+        con.close()
+
+
+def test_build_real_row_counts_increase_with_data(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Table row counts match the mocked API data after real ingestion."""
+    _setup_nba_api_mocks(monkeypatch)
+    db_path = tmp_path / "nba.db"
+    build_module.build_real(db_path=db_path, seasons=["2023-24"], raw_dir=tmp_path / "raw")
+
+    con = sqlite3.connect(db_path)
+    try:
+        assert con.execute("SELECT COUNT(*) FROM teams").fetchone()[0] == 2
+        assert con.execute("SELECT COUNT(*) FROM players").fetchone()[0] == 1
+        assert con.execute("SELECT COUNT(*) FROM seasons").fetchone()[0] == 1
+        assert con.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 1
+        assert con.execute("SELECT COUNT(*) FROM player_game_stats").fetchone()[0] == 1
+        assert con.execute("SELECT COUNT(*) FROM player_season_stats").fetchone()[0] == 1
+        assert con.execute("SELECT COUNT(*) FROM team_season_stats").fetchone()[0] == 2
+    finally:
+        con.close()
+
+
+# ---------------------------------------------------------------------------
+# Helper function unit tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("m", "expected"), [
+    (None, None),
+    (34.0, 34.0),
+    ("34:25", pytest.approx(34.0 + 25.0 / 60.0, abs=0.001)),
+    ("0:00", 0.0),
+    ("", None),
+    ("None", None),
+    (0, 0.0),
+])
+def test_parse_minutes(m: object, expected: object) -> None:
+    result = build_module._parse_minutes(m)
+    if expected is None:
+        assert result is None
+    else:
+        assert result == expected
+
+
+@pytest.mark.parametrize(("game_id", "expected"), [
+    (22300001, "regular"),   # 0022300001 padded → s[2]='2'
+    (42300001, "playoff"),   # 0042300001 padded → s[2]='4'
+    (12300001, "regular"),   # preseason → not playoff
+    (32300001, "regular"),   # all-star → not playoff
+])
+def test_game_type_from_id(game_id: int, expected: str) -> None:
+    assert build_module._game_type_from_id(game_id) == expected
+
+
+def test_default_mode_is_real() -> None:
+    """CLI default mode must be 'real' per PROJECT_PLAN.md milestone 3.5."""
+    args = build_module._parse_args([])
+    assert args.mode == "real"
+
+
+def test_seed_mode_explicit() -> None:
+    """--mode seed must still be accepted (needed by offline tests)."""
+    args = build_module._parse_args(["--mode", "seed"])
+    assert args.mode == "seed"
 
 
 def test_build_real_retries_on_failure(

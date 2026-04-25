@@ -2,21 +2,31 @@
 
 Two modes:
 
-* ``seed`` (default) — fast, deterministic, offline. Inserts a small hand-curated
-  fixture useful for tests and demos. Used automatically by pytest.
-* ``real`` — calls nba_api to pull real data for 2020-21 through 2024-25,
-  with retries and idempotent inserts. Saves raw API responses to ``data/raw/``
-  for reproducibility. Logs each run to ``ingestion_log``.
+* ``real`` (default) — calls nba_api to pull real data for 2020-21 through
+  2024-25, with retries and idempotent inserts. Saves raw API responses to
+  ``data/raw/`` for reproducibility. Logs each run to ``ingestion_log``.
+
+  Advanced stats populated from nba_api endpoints:
+    - player: true_shooting_pct (TS_PCT), effective_fg_pct (EFG_PCT),
+      usage_rate (USG_PCT) via LeagueDashPlayerStats(measure_type='Advanced').
+    - player: player_efficiency_rating, win_shares, box_plus_minus, and vorp
+      are intentionally NULL — these are Basketball Reference proprietary
+      statistics not available through nba_api.
+    - team: pace, offensive_rating, defensive_rating, net_rating via
+      LeagueDashTeamStats(measure_type='Advanced').
+    - team: opp_points_per_game via LeagueDashTeamStats(measure_type='Opponent').
+
+  Expected rough counts: ~1500 players, ~30 teams, ~6000 games,
+  ~7500 player-season rows, ~350000 player-game stat rows.
+
+* ``seed`` — fast, deterministic, offline fixture. Inserts a small
+  hand-curated dataset useful for tests and demos. Pass ``--mode seed``
+  explicitly.
 
 Run:
-    uv run python scripts/build_stats_db.py                # seed mode
-    uv run python scripts/build_stats_db.py --mode real    # real ingestion
-
-Article/vector tables (``articles``, ``article_chunks``, ``chunk_embeddings``)
-are created as empty placeholders. Corpus ingestion is a Milestone 7 task.
-``chunk_embeddings`` requires the ``sqlite-vec`` extension; if the extension is
-not available the embeddings virtual table is skipped (other code paths should
-guard on its existence).
+    uv run python scripts/build_stats_db.py               # real ingestion
+    uv run python scripts/build_stats_db.py --mode seed   # offline fixture
+    uv run python scripts/build_stats_db.py --mode real --seasons 2023-24
 """
 
 from __future__ import annotations
@@ -86,24 +96,25 @@ CREATE INDEX IF NOT EXISTS idx_games_season ON games(season_id);
 CREATE INDEX IF NOT EXISTS idx_games_date   ON games(game_date);
 
 CREATE TABLE IF NOT EXISTS player_game_stats (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    game_id      INTEGER NOT NULL,
-    player_id    INTEGER NOT NULL,
-    team_id      INTEGER NOT NULL,
-    minutes      REAL,
-    points       INTEGER,
-    rebounds     INTEGER,
-    assists      INTEGER,
-    steals       INTEGER,
-    blocks       INTEGER,
-    turnovers    INTEGER,
-    fg_made      INTEGER,
-    fg_attempted INTEGER,
-    fg3_made     INTEGER,
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id       INTEGER NOT NULL,
+    player_id     INTEGER NOT NULL,
+    team_id       INTEGER NOT NULL,
+    minutes       REAL,
+    points        INTEGER,
+    rebounds      INTEGER,
+    assists       INTEGER,
+    steals        INTEGER,
+    blocks        INTEGER,
+    turnovers     INTEGER,
+    fg_made       INTEGER,
+    fg_attempted  INTEGER,
+    fg3_made      INTEGER,
     fg3_attempted INTEGER,
-    ft_made      INTEGER,
-    ft_attempted INTEGER,
-    plus_minus   INTEGER,
+    ft_made       INTEGER,
+    ft_attempted  INTEGER,
+    plus_minus    INTEGER,
+    UNIQUE(game_id, player_id),
     FOREIGN KEY (game_id)   REFERENCES games(game_id),
     FOREIGN KEY (player_id) REFERENCES players(player_id),
     FOREIGN KEY (team_id)   REFERENCES teams(team_id)
@@ -144,17 +155,17 @@ CREATE INDEX IF NOT EXISTS idx_pss_season ON player_season_stats(season_id);
 CREATE INDEX IF NOT EXISTS idx_pss_player ON player_season_stats(player_id);
 
 CREATE TABLE IF NOT EXISTS team_season_stats (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    team_id           INTEGER NOT NULL,
-    season_id         TEXT NOT NULL,
-    wins              INTEGER,
-    losses            INTEGER,
-    points_per_game   REAL,
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_id             INTEGER NOT NULL,
+    season_id           TEXT NOT NULL,
+    wins                INTEGER,
+    losses              INTEGER,
+    points_per_game     REAL,
     opp_points_per_game REAL,
-    pace              REAL,
-    offensive_rating  REAL,
-    defensive_rating  REAL,
-    net_rating        REAL,
+    pace                REAL,
+    offensive_rating    REAL,
+    defensive_rating    REAL,
+    net_rating          REAL,
     UNIQUE(team_id, season_id),
     FOREIGN KEY (team_id)   REFERENCES teams(team_id),
     FOREIGN KEY (season_id) REFERENCES seasons(season_id)
@@ -395,7 +406,7 @@ def build(db_path: Path = DB_PATH) -> None:
 # Real ingestion via nba_api
 # ---------------------------------------------------------------------------
 
-# 2024-25 assignments; stable enough for the 2020-25 window.
+# 2024-25 conference/division assignments (stable for the 2020-25 window).
 _CONFERENCE: dict[str, str] = {
     "ATL": "East", "BOS": "East", "BKN": "East", "CHA": "East", "CHI": "East",
     "CLE": "East", "DET": "East", "IND": "East", "MIA": "East", "MIL": "East",
@@ -407,14 +418,14 @@ _CONFERENCE: dict[str, str] = {
 _DIVISION: dict[str, str] = {
     "BOS": "Atlantic", "BKN": "Atlantic", "NYK": "Atlantic",
     "PHI": "Atlantic", "TOR": "Atlantic",
-    "CHI": "Central", "CLE": "Central", "DET": "Central",
-    "IND": "Central", "MIL": "Central",
+    "CHI": "Central",  "CLE": "Central",  "DET": "Central",
+    "IND": "Central",  "MIL": "Central",
     "ATL": "Southeast", "CHA": "Southeast", "MIA": "Southeast",
     "ORL": "Southeast", "WAS": "Southeast",
     "DEN": "Northwest", "MIN": "Northwest", "OKC": "Northwest",
     "POR": "Northwest", "UTA": "Northwest",
-    "GSW": "Pacific", "LAC": "Pacific", "LAL": "Pacific",
-    "PHX": "Pacific", "SAC": "Pacific",
+    "GSW": "Pacific",   "LAC": "Pacific",   "LAL": "Pacific",
+    "PHX": "Pacific",   "SAC": "Pacific",
     "DAL": "Southwest", "HOU": "Southwest", "MEM": "Southwest",
     "NOP": "Southwest", "SAS": "Southwest",
 }
@@ -461,6 +472,289 @@ def _season_years(season_id: str) -> tuple[int, int]:
     return start, start + 1
 
 
+def _parse_minutes(m: Any) -> float | None:
+    """Convert 'MM:SS' string or numeric minutes to float."""
+    if m is None:
+        return None
+    if isinstance(m, (int, float)):
+        return float(m)
+    s = str(m).strip()
+    if not s or s.lower() == "none":
+        return None
+    if ":" in s:
+        try:
+            parts = s.split(":")
+            return float(parts[0]) + float(parts[1]) / 60.0
+        except (ValueError, IndexError):
+            return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _game_type_from_id(game_id: int) -> str:
+    """Return 'playoff' or 'regular' from the NBA game ID.
+
+    NBA game IDs are 10 digits: 00{type}{YY}{GGGGG}
+    type digit: 2=regular season, 4=playoffs, 1=preseason, 3=all-star
+    """
+    s = str(game_id).zfill(10)
+    return "playoff" if s[2] == "4" else "regular"
+
+
+def _fetch_advanced_player_stats(
+    season_id: str,
+    raw_dir: Path,
+) -> dict[tuple[int, int], dict[str, Any]]:
+    """Return {(player_id, team_id): {ts_pct, efg_pct, usg_pct}} from the Advanced endpoint.
+
+    player_efficiency_rating, win_shares, box_plus_minus, and vorp are NOT
+    available through nba_api — those require Basketball Reference data.
+    """
+    from nba_api.stats.endpoints import leaguedashplayerstats  # type: ignore[import-untyped]
+
+    result = _with_retries(
+        lambda sid=season_id: leaguedashplayerstats.LeagueDashPlayerStats(
+            season=sid,
+            measure_type_detailed_defense="Advanced",
+            per_mode_detailed="PerGame",
+        ).get_dict(),
+        label=f"player_adv_{season_id}",
+    )
+    _save_raw(f"player_stats_adv_{season_id}", result, raw_dir)
+    rows = _row_dicts(result["resultSets"][0])
+    return {
+        (int(r["PLAYER_ID"]), int(r["TEAM_ID"])): {
+            "true_shooting_pct": r.get("TS_PCT"),
+            "effective_fg_pct": r.get("EFG_PCT"),
+            "usage_rate": r.get("USG_PCT"),
+        }
+        for r in rows
+    }
+
+
+def _fetch_advanced_team_stats(
+    season_id: str,
+    raw_dir: Path,
+) -> dict[int, dict[str, Any]]:
+    """Return {team_id: {pace, off_rating, def_rating, net_rating, opp_ppg}}."""
+    from nba_api.stats.endpoints import leaguedashteamstats
+
+    adv_result = _with_retries(
+        lambda sid=season_id: leaguedashteamstats.LeagueDashTeamStats(
+            season=sid,
+            measure_type_detailed_defense="Advanced",
+            per_mode_detailed="PerGame",
+        ).get_dict(),
+        label=f"team_adv_{season_id}",
+    )
+    _save_raw(f"team_stats_adv_{season_id}", adv_result, raw_dir)
+    adv_rows = _row_dicts(adv_result["resultSets"][0])
+    combined: dict[int, dict[str, Any]] = {
+        int(r["TEAM_ID"]): {
+            "pace": r.get("PACE"),
+            "offensive_rating": r.get("OFF_RATING"),
+            "defensive_rating": r.get("DEF_RATING"),
+            "net_rating": r.get("NET_RATING"),
+            "opp_points_per_game": None,
+        }
+        for r in adv_rows
+    }
+
+    opp_result = _with_retries(
+        lambda sid=season_id: leaguedashteamstats.LeagueDashTeamStats(
+            season=sid,
+            measure_type_detailed_defense="Opponent",
+            per_mode_detailed="PerGame",
+        ).get_dict(),
+        label=f"team_opp_{season_id}",
+    )
+    _save_raw(f"team_stats_opp_{season_id}", opp_result, raw_dir)
+    for r in _row_dicts(opp_result["resultSets"][0]):
+        tid = int(r["TEAM_ID"])
+        if tid in combined:
+            # Field may be OPP_PTS in Opponent measure or PTS depending on nba_api version
+            combined[tid]["opp_points_per_game"] = r.get("OPP_PTS") or r.get("PTS")
+
+    return combined
+
+
+def _fetch_and_insert_games(
+    season_id: str,
+    con: sqlite3.Connection,
+    raw_dir: Path,
+) -> int:
+    """Fetch LeagueGameLog for regular season + playoffs, insert idempotently.
+
+    Returns count of game rows inserted (skips duplicates).
+    """
+    from nba_api.stats.endpoints import leaguegamelog
+
+    inserted = 0
+    for season_type, game_type_label in [
+        ("Regular Season", "regular"),
+        ("Playoffs", "playoff"),
+    ]:
+        raw_key = f"gamelog_{season_id}_{game_type_label}"
+        result = _with_retries(
+            lambda sid=season_id, st=season_type: leaguegamelog.LeagueGameLog(
+                season=sid,
+                season_type_all_star=st,
+            ).get_dict(),
+            label=raw_key,
+        )
+        _save_raw(raw_key, result, raw_dir)
+        rows = _row_dicts(result["resultSets"][0])
+
+        # Pair home/away rows by game_id
+        by_game: dict[int, list[dict[str, Any]]] = {}
+        for r in rows:
+            gid = int(r["GAME_ID"])
+            by_game.setdefault(gid, []).append(r)
+
+        game_tuples: list[tuple[Any, ...]] = []
+        for gid, team_rows in by_game.items():
+            home = next((r for r in team_rows if "vs." in r.get("MATCHUP", "")), None)
+            away = next((r for r in team_rows if " @ " in r.get("MATCHUP", "")), None)
+            if home is None or away is None:
+                continue
+            raw_date = str(home.get("GAME_DATE", ""))
+            try:
+                game_date = datetime.strptime(raw_date, "%Y-%m-%d").strftime("%Y-%m-%d")
+            except ValueError:
+                try:
+                    game_date = datetime.strptime(raw_date, "%b %d, %Y").strftime("%Y-%m-%d")
+                except ValueError:
+                    game_date = raw_date[:10]
+            game_tuples.append((
+                gid,
+                game_date,
+                season_id,
+                int(home["TEAM_ID"]),
+                int(away["TEAM_ID"]),
+                int(home.get("PTS") or 0),
+                int(away.get("PTS") or 0),
+                game_type_label,
+            ))
+
+        if game_tuples:
+            con.executemany(
+                "INSERT OR IGNORE INTO games VALUES (?,?,?,?,?,?,?,?)",
+                game_tuples,
+            )
+            inserted += len(game_tuples)
+            print(f"    {len(game_tuples)} {game_type_label} games for {season_id}")
+
+    return inserted
+
+
+def _fetch_and_insert_player_game_stats(
+    season_id: str,
+    con: sqlite3.Connection,
+    raw_dir: Path,
+) -> int:
+    """Fetch PlayerGameLogs for regular season + playoffs, insert idempotently.
+
+    Skips game_ids already present in player_game_stats (idempotency).
+    Returns count of rows inserted.
+    """
+    from nba_api.stats.endpoints import playergamelogs
+
+    # Cache existing game_ids so repeated runs skip already-loaded games.
+    existing_game_ids: set[int] = {
+        int(r[0])
+        for r in con.execute("SELECT DISTINCT game_id FROM player_game_stats").fetchall()
+    }
+
+    inserted = 0
+    for season_type in ["Regular Season", "Playoffs"]:
+        raw_key = (
+            f"player_gamelogs_{season_id}_{season_type.replace(' ', '_').lower()}"
+        )
+        result = _with_retries(
+            lambda sid=season_id, st=season_type: playergamelogs.PlayerGameLogs(
+                season_nullable=sid,
+                season_type_nullable=st,
+            ).get_dict(),
+            label=raw_key,
+        )
+        _save_raw(raw_key, result, raw_dir)
+        rows = _row_dicts(result["resultSets"][0])
+
+        # Ensure all referenced players exist. PlayerGameLogs may include
+        # two-way/short-stint players absent from LeagueDashPlayerStats averages.
+        known_pids: set[int] = {
+            int(r[0]) for r in con.execute("SELECT player_id FROM players").fetchall()
+        }
+        missing_players: list[tuple[Any, ...]] = []
+        seen_missing: set[int] = set()
+        for r in rows:
+            pid = int(r["PLAYER_ID"])
+            if pid not in known_pids and pid not in seen_missing:
+                seen_missing.add(pid)
+                name = str(r.get("PLAYER_NAME", "")).strip()
+                parts = name.split(" ", 1)
+                missing_players.append(
+                    (pid, name, parts[0], parts[1] if len(parts) > 1 else "",
+                     None, None, None, None, None, None)
+                )
+        if missing_players:
+            con.executemany(
+                "INSERT OR IGNORE INTO players VALUES (?,?,?,?,?,?,?,?,?,?)",
+                missing_players,
+            )
+            known_pids.update(p[0] for p in missing_players)
+
+        # Also collect game_ids present in the games table to guard against
+        # any game log entries for games not yet inserted (e.g. play-in games).
+        known_game_ids: set[int] = {
+            int(r[0]) for r in con.execute("SELECT game_id FROM games").fetchall()
+        }
+
+        pgs_tuples: list[tuple[Any, ...]] = []
+        for r in rows:
+            gid = int(r["GAME_ID"])
+            if gid in existing_game_ids:
+                continue
+            if gid not in known_game_ids:
+                continue  # skip game not in games table (play-in, IST, etc.)
+            pgs_tuples.append((
+                gid,
+                int(r["PLAYER_ID"]),
+                int(r["TEAM_ID"]),
+                _parse_minutes(r.get("MIN")),
+                r.get("PTS"),
+                r.get("REB"),
+                r.get("AST"),
+                r.get("STL"),
+                r.get("BLK"),
+                r.get("TOV"),
+                r.get("FGM"),
+                r.get("FGA"),
+                r.get("FG3M"),
+                r.get("FG3A"),
+                r.get("FTM"),
+                r.get("FTA"),
+                r.get("PLUS_MINUS"),
+            ))
+
+        if pgs_tuples:
+            con.executemany(
+                "INSERT OR IGNORE INTO player_game_stats"
+                "(game_id,player_id,team_id,minutes,points,rebounds,assists,"
+                "steals,blocks,turnovers,fg_made,fg_attempted,fg3_made,"
+                "fg3_attempted,ft_made,ft_attempted,plus_minus)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                pgs_tuples,
+            )
+            inserted += len(pgs_tuples)
+            existing_game_ids.update(t[0] for t in pgs_tuples)
+            print(f"    {len(pgs_tuples)} player-game rows for {season_id} ({season_type})")
+
+    return inserted
+
+
 def build_real(
     db_path: Path = DB_PATH,
     seasons: list[str] | None = None,
@@ -468,9 +762,10 @@ def build_real(
 ) -> dict[str, int]:
     """Pull real NBA data via nba_api. Returns a dict of {table: rows_added}.
 
-    This is an online operation. It is NOT invoked by the default test suite.
+    This is an online operation requiring network access. It is NOT called by
+    the default test suite. Tests use mocked versions of the nba_api endpoints.
     """
-    from nba_api.stats.endpoints import (  # type: ignore[import-untyped]
+    from nba_api.stats.endpoints import (
         leaguedashplayerstats,
         leaguedashteamstats,
     )
@@ -479,6 +774,11 @@ def build_real(
     seasons = seasons or REAL_SEASONS
     raw_dir.mkdir(parents=True, exist_ok=True)
     db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Always start from a clean file so seed data (with incompatible IDs) can't
+    # conflict with real team/player IDs via FK constraints.
+    if db_path.exists():
+        db_path.unlink()
 
     con = sqlite3.connect(db_path)
     counts: dict[str, int] = {}
@@ -508,27 +808,34 @@ def build_real(
             )
             counts["seasons"] = len(season_rows)
 
-            # --- per-season player + team stats ---
+            # --- per-season stats ---
             player_count = 0
             pss_count = 0
             tss_count = 0
+            games_count = 0
+            pgs_count = 0
             seen_players: set[int] = set()
 
             for season_id in seasons:
-                print(f"  fetching player stats for {season_id} ...")
+                print(f"  season {season_id}: fetching player stats (base) ...")
                 ps = _with_retries(
                     lambda sid=season_id: leaguedashplayerstats.LeagueDashPlayerStats(
-                        season=sid
+                        season=sid,
+                        per_mode_detailed="PerGame",
                     ).get_dict(),
                     label=f"player_stats_{season_id}",
                 )
                 _save_raw(f"player_stats_{season_id}", ps, raw_dir)
-                rows = _row_dicts(ps["resultSets"][0])
+                base_rows = _row_dicts(ps["resultSets"][0])
+
+                print(f"  season {season_id}: fetching player stats (advanced) ...")
+                adv_player = _fetch_advanced_player_stats(season_id, raw_dir)
 
                 player_tuples: list[tuple[Any, ...]] = []
                 pss_tuples: list[tuple[Any, ...]] = []
-                for r in rows:
+                for r in base_rows:
                     pid = int(r["PLAYER_ID"])
+                    tid = int(r["TEAM_ID"])
                     if pid not in seen_players:
                         seen_players.add(pid)
                         name = str(r["PLAYER_NAME"]).strip()
@@ -538,32 +845,31 @@ def build_real(
                         player_tuples.append(
                             (pid, name, first, last, None, None, None, None, None, None)
                         )
-                    pss_tuples.append(
-                        (
-                            pid,
-                            season_id,
-                            int(r["TEAM_ID"]),
-                            r.get("GP"),
-                            r.get("GS"),
-                            r.get("MIN"),
-                            r.get("PTS"),
-                            r.get("REB"),
-                            r.get("AST"),
-                            r.get("STL"),
-                            r.get("BLK"),
-                            r.get("TOV"),
-                            r.get("FG_PCT"),
-                            r.get("FG3_PCT"),
-                            r.get("FT_PCT"),
-                            None,  # true_shooting_pct — advanced, not in this endpoint
-                            None,  # effective_fg_pct
-                            None,  # usage_rate
-                            None,  # player_efficiency_rating
-                            None,  # win_shares
-                            None,  # box_plus_minus
-                            None,  # vorp
-                        )
-                    )
+                    adv = adv_player.get((pid, tid), {})
+                    pss_tuples.append((
+                        pid,
+                        season_id,
+                        tid,
+                        r.get("GP"),
+                        r.get("GS"),
+                        r.get("MIN"),
+                        r.get("PTS"),
+                        r.get("REB"),
+                        r.get("AST"),
+                        r.get("STL"),
+                        r.get("BLK"),
+                        r.get("TOV"),
+                        r.get("FG_PCT"),
+                        r.get("FG3_PCT"),
+                        r.get("FT_PCT"),
+                        adv.get("true_shooting_pct"),
+                        adv.get("effective_fg_pct"),
+                        adv.get("usage_rate"),
+                        None,  # player_efficiency_rating: Basketball Reference only
+                        None,  # win_shares: Basketball Reference only
+                        None,  # box_plus_minus: Basketball Reference only
+                        None,  # vorp: Basketball Reference only
+                    ))
 
                 if player_tuples:
                     con.executemany(
@@ -585,15 +891,19 @@ def build_real(
                     )
                     pss_count += len(pss_tuples)
 
-                print(f"  fetching team stats for {season_id} ...")
+                print(f"  season {season_id}: fetching team stats (base) ...")
                 ts = _with_retries(
                     lambda sid=season_id: leaguedashteamstats.LeagueDashTeamStats(
-                        season=sid
+                        season=sid,
+                        per_mode_detailed="PerGame",
                     ).get_dict(),
                     label=f"team_stats_{season_id}",
                 )
                 _save_raw(f"team_stats_{season_id}", ts, raw_dir)
                 trows = _row_dicts(ts["resultSets"][0])
+
+                print(f"  season {season_id}: fetching team stats (advanced + opponent) ...")
+                adv_team = _fetch_advanced_team_stats(season_id, raw_dir)
 
                 tss_tuples = [
                     (
@@ -602,11 +912,11 @@ def build_real(
                         r.get("W"),
                         r.get("L"),
                         r.get("PTS"),
-                        None,  # opp_points_per_game — needs opp endpoint
-                        None,  # pace
-                        None,  # offensive_rating
-                        None,  # defensive_rating
-                        None,  # net_rating
+                        adv_team.get(int(r["TEAM_ID"]), {}).get("opp_points_per_game"),
+                        adv_team.get(int(r["TEAM_ID"]), {}).get("pace"),
+                        adv_team.get(int(r["TEAM_ID"]), {}).get("offensive_rating"),
+                        adv_team.get(int(r["TEAM_ID"]), {}).get("defensive_rating"),
+                        adv_team.get(int(r["TEAM_ID"]), {}).get("net_rating"),
                     )
                     for r in trows
                 ]
@@ -621,9 +931,17 @@ def build_real(
                     )
                     tss_count += len(tss_tuples)
 
+                print(f"  season {season_id}: fetching games ...")
+                games_count += _fetch_and_insert_games(season_id, con, raw_dir)
+
+                print(f"  season {season_id}: fetching player game logs ...")
+                pgs_count += _fetch_and_insert_player_game_stats(season_id, con, raw_dir)
+
             counts["players"] = player_count
             counts["player_season_stats"] = pss_count
             counts["team_season_stats"] = tss_count
+            counts["games"] = games_count
+            counts["player_game_stats"] = pgs_count
 
             total = sum(counts.values())
             con.execute(
@@ -653,8 +971,11 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument(
         "--mode",
         choices=["seed", "real"],
-        default="seed",
-        help="seed = fast offline fixture (default). real = pull via nba_api.",
+        default="real",
+        help=(
+            "real = pull via nba_api (default, requires network). "
+            "seed = fast offline fixture for tests."
+        ),
     )
     p.add_argument("--db", type=Path, default=DB_PATH)
     p.add_argument("--raw", type=Path, default=RAW_DIR)
@@ -662,7 +983,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--seasons",
         nargs="+",
         default=REAL_SEASONS,
-        help="Seasons for real mode. Default: 2020-21..2024-25.",
+        help="Seasons for real mode. Default: 2020-21 through 2024-25.",
     )
     return p.parse_args(argv)
 

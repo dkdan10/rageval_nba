@@ -646,9 +646,15 @@ Each milestone has: (a) goal, (b) files to create/modify, (c) ship criterion.
   - Save raw API responses to `data/raw/` as JSON (for reproducibility)
 - Add retry logic — nba_api is flaky
 - Log to `ingestion_log` table
-- Expected: ~1500 players, ~30 teams, ~5000 games, ~7500 player-season rows
+- Expected from the current `nba_api` ingestion path: ~1,000 players, 30 teams,
+  ~6,400 games, ~2,800 player-season rows, and ~135,000 player-game rows for
+  2020-21 through 2024-25. A verified run on 2026-04-24 produced 992 players,
+  30 teams, 6,417 games, 2,825 player-season rows, 150 team-season rows, and
+  136,548 player-game stat rows. Basketball Reference-only fields
+  (`player_efficiency_rating`, `win_shares`, `box_plus_minus`, `vorp`) are left
+  NULL because `nba_api` does not expose them.
 
-**Ship criterion:** `uv run python scripts/build_stats_db.py` runs to completion. Can query `SELECT player_name, points_per_game FROM player_season_stats JOIN players USING(player_id) WHERE season_id='2023-24' ORDER BY points_per_game DESC LIMIT 5` and get sensible results.
+**Ship criterion:** `uv run python scripts/build_stats_db.py` runs to completion. Can query `SELECT players.full_name AS player_name, player_season_stats.points_per_game FROM player_season_stats JOIN players USING(player_id) WHERE season_id='2023-24' ORDER BY points_per_game DESC LIMIT 5` and get sensible results.
 
 ### Milestone 3.75 — Router + Text-to-SQL
 

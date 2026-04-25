@@ -28,12 +28,13 @@ rate and exits non-zero if any judge falls below the threshold.
 
 Deterministic judges (currently only `routing`) require no API key.
 
-**Current status (last reviewed for Milestones 4 & 5):** unit tests in
-`tests/test_judges.py` and `tests/test_calibrate.py` fully exercise parsing,
-error handling, tool-use plumbing, and the agreement math with mocked LLM
-responses. The scripted real-LLM calibration run is gated on
-`ANTHROPIC_API_KEY` and has not been recorded in this doc yet — see the table
-below for expected format once a run is performed.
+**Current status before Milestone 6:** unit tests in `tests/test_judges.py` and
+`tests/test_calibrate.py` fully exercise parsing, error handling, tool-use
+plumbing, position-swap handling, and agreement math with mocked LLM responses.
+The scripted real-LLM calibration run is gated on `ANTHROPIC_API_KEY` and has
+not been recorded in this doc yet. Until that run is recorded, faithfulness,
+relevance, and correctness should be treated as implemented but not yet
+empirically calibrated.
 
 ## Method
 
@@ -170,6 +171,14 @@ unused, and a test asserts the file documents this.
 
 The numbers above will be filled in on the first scripted live-LLM calibration
 run. Prompt changes should be followed by a re-run and an update to this table.
+
+## Milestone 6 Readiness Note
+
+The judge implementations are ready to be wired into the evaluator, but their
+live agreement rates are still pending. Milestone 6 can proceed using mocked
+judge tests and deterministic fixtures, but any public claim that the LLM-backed
+judges are calibrated at or above 80% should wait until the table above is
+filled with a real run.
 
 ---
 
