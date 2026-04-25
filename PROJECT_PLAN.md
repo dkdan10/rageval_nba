@@ -695,7 +695,10 @@ Each milestone has: (a) goal, (b) files to create/modify, (c) ship criterion.
 **Goal:** Relevance, correctness, and routing-accuracy judges. Bias mitigation.
 
 **Tasks:**
-- `RelevanceJudge`, `CorrectnessJudge`, `RoutingJudge` following same pattern
+- `RelevanceJudge`, `CorrectnessJudge`, `RoutingJudge`. RoutingJudge is
+  deterministic by design: it compares `response.routing_decision` directly to
+  `case.question_type` rather than using an LLM prompt, because routing accuracy
+  is a fixed-label classification check.
 - `CorrectnessJudge` uses 0-4 scale, not binary
 - Implement **position-swap** bias mitigation for correctness: run twice with positions swapped, flag disagreements
 - Calibrate each against 10 hand labels

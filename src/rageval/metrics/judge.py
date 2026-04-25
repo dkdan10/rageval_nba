@@ -164,8 +164,9 @@ def _parse_faithfulness(case_id: str, response: dict[str, Any]) -> MetricResult:
 
 
 class FaithfulnessJudge:
-    def __init__(self, llm: LLMClient | None = None) -> None:
+    def __init__(self, llm: LLMClient | None = None, no_cache: bool = False) -> None:
         self._llm: LLMClient = llm or LLMClient()
+        self._no_cache = no_cache
         self._system: str = _load_prompt("faithfulness")
 
     async def evaluate(self, case: TestCase, response: RAGResponse) -> MetricResult:
@@ -182,6 +183,7 @@ class FaithfulnessJudge:
             temperature=0.0,
             tools=[_FAITHFULNESS_TOOL],
             tool_choice={"type": "tool", "name": _FAITHFULNESS_TOOL["name"]},
+            no_cache=self._no_cache,
         )
         return _parse_faithfulness(case.id, result)
 
@@ -221,8 +223,9 @@ def _parse_relevance(case_id: str, response: dict[str, Any]) -> MetricResult:
 
 
 class RelevanceJudge:
-    def __init__(self, llm: LLMClient | None = None) -> None:
+    def __init__(self, llm: LLMClient | None = None, no_cache: bool = False) -> None:
         self._llm: LLMClient = llm or LLMClient()
+        self._no_cache = no_cache
         self._system: str = _load_prompt("relevance")
 
     async def evaluate(self, case: TestCase, response: RAGResponse) -> MetricResult:
@@ -234,6 +237,7 @@ class RelevanceJudge:
             temperature=0.0,
             tools=[_RELEVANCE_TOOL],
             tool_choice={"type": "tool", "name": _RELEVANCE_TOOL["name"]},
+            no_cache=self._no_cache,
         )
         return _parse_relevance(case.id, result)
 
@@ -279,8 +283,9 @@ _DISAGREEMENT_THRESHOLD = 2
 
 
 class CorrectnessJudge:
-    def __init__(self, llm: LLMClient | None = None) -> None:
+    def __init__(self, llm: LLMClient | None = None, no_cache: bool = False) -> None:
         self._llm: LLMClient = llm or LLMClient()
+        self._no_cache = no_cache
         self._system: str = _load_prompt("correctness")
 
     async def evaluate(self, case: TestCase, response: RAGResponse) -> MetricResult:
@@ -299,10 +304,11 @@ class CorrectnessJudge:
         )
         swapped_user = (
             f"Question: {case.question}\n\n"
-            f"Candidate Answer: {case.expected_answer}\n\n"
-            f"Reference Answer: {response.answer}\n\n"
-            "Note: You are checking semantic equivalence. "
-            "Judge the candidate against the reference regardless of order."
+            f"Reference Answer: {case.expected_answer}\n\n"
+            f"Candidate Answer: {response.answer}\n\n"
+            "Note: The reference is shown before the candidate in this pass to "
+            "check for position bias. Still score the Candidate Answer against "
+            "the Reference Answer."
         )
 
         tools = [_CORRECTNESS_TOOL]
@@ -315,6 +321,7 @@ class CorrectnessJudge:
             temperature=0.0,
             tools=tools,
             tool_choice=tool_choice,
+            no_cache=self._no_cache,
         )
         swapped_raw = await self._llm.complete(
             system=self._system,
@@ -323,6 +330,7 @@ class CorrectnessJudge:
             temperature=0.0,
             tools=tools,
             tool_choice=tool_choice,
+            no_cache=self._no_cache,
         )
 
         fwd_score, fwd_reasoning, fwd_err = _parse_correctness_pass(

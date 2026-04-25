@@ -2,11 +2,13 @@
 
 Usage:
     uv run python scripts/calibrate_judge.py [all|faithfulness|relevance|correctness|routing]
+    uv run python scripts/calibrate_judge.py all --threshold 0.8 --no-cache
 
 This script drives each judge against its calibration fixture (10 cases per
 judge) and prints agreement rates. By default it uses ``LLMClient()`` which
 requires ``ANTHROPIC_API_KEY`` in the environment. Responses are cached in
 ``.rageval_cache/`` so repeated runs are fast and cheap.
+Pass ``--no-cache`` to force fresh LLM calls for live calibration evidence.
 
 Exits non-zero if any judge falls below the ``--threshold`` (default 0.8).
 
@@ -24,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
 
 from rageval.llm_client import LLMClient
 from rageval.metrics.judge import (
@@ -35,6 +38,7 @@ from rageval.metrics.judge import (
 from rageval.types import Document, QuestionType, RAGResponse, TestCase
 
 _FIXTURES_DIR = Path(__file__).parents[1] / "tests" / "fixtures"
+_REPO_ROOT = Path(__file__).parents[1]
 _DEFAULT_THRESHOLD = 0.8
 _ALL_JUDGES = frozenset({"faithfulness", "relevance", "correctness", "routing"})
 
@@ -62,10 +66,10 @@ def correctness_agreement(scores: list[float], human_scores: list[int]) -> float
     ) / len(scores)
 
 
-async def calibrate_faithfulness(llm: LLMClient | None = None) -> float:
+async def calibrate_faithfulness(llm: LLMClient | None = None, no_cache: bool = False) -> float:
     """Return faithfulness judge agreement rate against human labels."""
     cases = load_fixture("faithfulness")
-    judge = FaithfulnessJudge(llm=llm)
+    judge = FaithfulnessJudge(llm=llm, no_cache=no_cache)
     verdicts: list[bool] = []
     labels: list[bool] = []
     for c in cases:
@@ -78,10 +82,10 @@ async def calibrate_faithfulness(llm: LLMClient | None = None) -> float:
     return binary_agreement(verdicts, labels)
 
 
-async def calibrate_relevance(llm: LLMClient | None = None) -> float:
+async def calibrate_relevance(llm: LLMClient | None = None, no_cache: bool = False) -> float:
     """Return relevance judge agreement rate against human labels."""
     cases = load_fixture("relevance")
-    judge = RelevanceJudge(llm=llm)
+    judge = RelevanceJudge(llm=llm, no_cache=no_cache)
     verdicts: list[bool] = []
     labels: list[bool] = []
     for c in cases:
@@ -95,10 +99,10 @@ async def calibrate_relevance(llm: LLMClient | None = None) -> float:
     return binary_agreement(verdicts, labels)
 
 
-async def calibrate_correctness(llm: LLMClient | None = None) -> float:
+async def calibrate_correctness(llm: LLMClient | None = None, no_cache: bool = False) -> float:
     """Return correctness judge agreement rate against human scores."""
     cases = load_fixture("correctness")
-    judge = CorrectnessJudge(llm=llm)
+    judge = CorrectnessJudge(llm=llm, no_cache=no_cache)
     scores: list[float] = []
     human_scores: list[int] = []
     for c in cases:
@@ -132,7 +136,11 @@ async def calibrate_routing() -> float:
     return binary_agreement(verdicts, labels)
 
 
-async def run(judges: list[str], threshold: float = _DEFAULT_THRESHOLD) -> bool:
+async def run(
+    judges: list[str],
+    threshold: float = _DEFAULT_THRESHOLD,
+    no_cache: bool = False,
+) -> bool:
     """Run calibration for *judges*. Returns True if all meet *threshold*.
 
     LLM-backed judges share one ``LLMClient`` so the on-disk cache is reused
@@ -156,11 +164,11 @@ async def run(judges: list[str], threshold: float = _DEFAULT_THRESHOLD) -> bool:
 
     results: dict[str, float] = {}
     if "faithfulness" in to_run:
-        results["faithfulness"] = await calibrate_faithfulness(llm=llm)
+        results["faithfulness"] = await calibrate_faithfulness(llm=llm, no_cache=no_cache)
     if "relevance" in to_run:
-        results["relevance"] = await calibrate_relevance(llm=llm)
+        results["relevance"] = await calibrate_relevance(llm=llm, no_cache=no_cache)
     if "correctness" in to_run:
-        results["correctness"] = await calibrate_correctness(llm=llm)
+        results["correctness"] = await calibrate_correctness(llm=llm, no_cache=no_cache)
     if "routing" in to_run:
         results["routing"] = await calibrate_routing()
 
@@ -198,12 +206,18 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         default=_DEFAULT_THRESHOLD,
         help=f"Agreement threshold (default {_DEFAULT_THRESHOLD}).",
     )
+    p.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Bypass cached LLM responses for LLM-backed judges.",
+    )
     return p.parse_args(argv)
 
 
 def main() -> None:
+    load_dotenv(_REPO_ROOT / ".env")
     args = _parse_args(sys.argv[1:])
-    ok = asyncio.run(run(args.judges, threshold=args.threshold))
+    ok = asyncio.run(run(args.judges, threshold=args.threshold, no_cache=args.no_cache))
     if not ok:
         sys.exit(1)
 
