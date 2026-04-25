@@ -1,0 +1,376 @@
+[
+  {
+    "article_id": "ctg-four-factors",
+    "title": "League: Four Factors",
+    "source": "Cleaning the Glass",
+    "url": "https://cleaningtheglass.com/stats/guide/league_four_factors",
+    "topics": ["four factors", "effective field goal percentage", "turnover rate", "rebounding", "free throws"],
+    "storage_policy": "metadata_plus_repo_authored_summary",
+    "notes": "Exact public Cleaning the Glass stats guide for efficiency and Dean Oliver's four factors. Includes original repo-authored retrieval summary.",
+    "full_text": "Repo-authored summary: The four factors explain why teams score efficiently: effective field goal percentage, turnover rate, offensive rebounding rate, and free throw rate. Offensive rebounding rate differs from raw offensive rebounds because it measures how often a team grabs available missed shots, normalizing second-chance creation for pace, missed-shot opportunities, and team style."
+  },
+  {
+    "article_id": "bbref-glossary",
+    "title": "Basketball Reference Glossary",
+    "source": "Basketball Reference",
+    "url": "https://www.basketball-reference.com/about/glossary.html",
+    "topics": ["glossary", "VORP", "BPM", "usage rate", "true shooting percentage"],
+    "storage_policy": "metadata_plus_repo_authored_summary",
+    "notes": "Stable glossary source for advanced stat definitions. Includes original repo-authored retrieval summary; do not commit copied glossary text.",
+    "full_text": "Repo-authored summary: VORP means Value Over Replacement Player. It estimates how much value a player adds above a replacement-level alternative, using box-score impact scaled to possessions and playing time. Usage rate estimates how often a player finishes or directly uses team possessions through shots, free throws, assists in some models, or turnovers, so it gives context when comparing efficiency at different offensive loads. True shooting percentage improves on field goal percentage by accounting for threes and free throws."
+  },
+  {
+    "article_id": "ctg-pace-adjustment",
+    "title": "Pace and Possession Adjustment",
+    "source": "Cleaning the Glass",
+    "url": "https://cleaningtheglass.com/stats/guide/league_four_factors",
+    "topics": ["pace", "possessions", "offensive rating", "defensive rating"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Cleaning the Glass guide section explains possessions and per-possession efficiency normalization."
+  },
+  {
+    "article_id": "thinking-basketball-gravity",
+    "title": "Offensive Gravity and Spacing",
+    "source": "Thinking Basketball",
+    "url": "https://thinkingbasketball.net/2017/06/27/star-player-effects-on-teammate-efficiency/",
+    "topics": ["gravity", "spacing", "shooting", "defensive attention"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Thinking Basketball article discussing star-player effects on teammate efficiency and defensive attention."
+  },
+  {
+    "article_id": "ctg-shooting-efficiency",
+    "title": "Shooting Efficiency Metrics",
+    "source": "Cleaning the Glass",
+    "url": "https://cleaningtheglass.com/stats/guide/player_shooting_loc",
+    "topics": ["true shooting percentage", "effective field goal percentage", "scoring efficiency"],
+    "storage_policy": "metadata_plus_repo_authored_summary",
+    "notes": "Exact public Cleaning the Glass shooting frequency and accuracy guide. Includes original repo-authored retrieval summary.",
+    "full_text": "Repo-authored summary: Analysts prefer true shooting percentage over field goal percentage because true shooting includes the extra value of three-pointers and the scoring value of free throws. Field goal percentage treats every make the same and ignores free throws, while true shooting better reflects total scoring efficiency from shots and trips to the line."
+  },
+  {
+    "article_id": "ctg-shot-quality",
+    "title": "Shot Quality Frameworks",
+    "source": "Cleaning the Glass",
+    "url": "https://cleaningtheglass.com/stats/guide/player_shooting_loc",
+    "topics": ["shot quality", "expected points", "shot location", "defender distance"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Cleaning the Glass shooting guide with shot-location categories useful for shot-quality discussion."
+  },
+  {
+    "article_id": "thinking-basketball-load-management",
+    "title": "NBA Load Management: What We Know and Don't Know",
+    "source": "ESPN",
+    "url": "https://www.espn.com/nba/story/_/id/28066201/nba-load-management-know-know",
+    "topics": ["load management", "health", "regular season", "playoffs"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public ESPN article on NBA load management, schedule density, rest, injury risk, and regular-season tradeoffs."
+  },
+  {
+    "article_id": "synergy-play-types",
+    "title": "Play Type Analysis",
+    "source": "Synergy Sports",
+    "url": "https://www.synergysports.com/",
+    "topics": ["play types", "pick and roll", "isolation", "transition", "post-up"],
+    "storage_policy": "metadata_plus_repo_authored_summary",
+    "notes": "Synergy source was not fetchable during live pass; includes original repo-authored play-type summary and avoids restricted or paywalled material.",
+    "full_text": "Repo-authored summary: Play type analysis groups possessions by the action that creates the shot or turnover. Common NBA play types include pick-and-roll ball handler, pick-and-roll roll man, isolation, post-up, spot-up, transition, off-screen, handoff, cut, and putback. Analysts use play types to see which actions an offense relies on and how efficiently each action generates points."
+  },
+  {
+    "article_id": "ctg-positive-possession",
+    "title": "Positive Possession Rate",
+    "source": "Cleaning the Glass",
+    "url": "https://cleaningtheglass.com/stats/guide/league_context",
+    "topics": ["positive possessions", "half-court offense", "made shots", "free throws"],
+    "storage_policy": "metadata_plus_repo_authored_summary",
+    "notes": "Exact public Cleaning the Glass play-context guide for possession context and play outcomes. Includes original repo-authored retrieval summary.",
+    "full_text": "Repo-authored summary: Positive possession rate is a way to describe how often half-court possessions end in useful outcomes. Positive possessions usually include made shots, free throw attempts, or other outcomes that create efficient scoring value, while empty possessions include missed shots without an offensive rebound, turnovers, or late-clock failures."
+  },
+  {
+    "article_id": "thinking-basketball-zone-defense",
+    "title": "Zone Defense Usage Is Up, But Teams Have Solutions",
+    "source": "NBA.com",
+    "url": "https://www.nba.com/news/numbers-notebook-zone-defenses",
+    "topics": ["zone defense", "help rotations", "three point shooting", "ball movement"],
+    "storage_policy": "metadata_plus_repo_authored_summary",
+    "notes": "NBA.com robots check timed out during live pass; includes original repo-authored zone-defense summary.",
+    "full_text": "Repo-authored summary: Zone defense assigns defenders to areas instead of one-on-one matchups. NBA teams use zone to change rhythm, protect weak individual defenders, shrink driving lanes, and hide matchup problems. The tradeoff is that zones can give up open three-point shots, offensive rebounds, and quick ball-movement advantages if rotations are late."
+  },
+  {
+    "article_id": "ctg-rim-protection",
+    "title": "Rim Protection Beyond Blocks",
+    "source": "Cleaning the Glass",
+    "url": "https://cleaningtheglass.com/stats/guide/player_def_reb",
+    "topics": ["rim protection", "blocks", "deterrence", "opponent field goal percentage"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Cleaning the Glass defense and rebounding guide with block-rate and defensive context."
+  },
+  {
+    "article_id": "thinking-basketball-late-game",
+    "title": "Late Game Decision-Making",
+    "source": "Thinking Basketball",
+    "url": "https://thinkingbasketball.net/2019/12/14/your-lineup-looks-great-but-how-stable-is-that-net-rating/",
+    "topics": ["late game", "win probability", "terminal value", "clock management"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Thinking Basketball article on net-rating stability; useful adjacent source for small-sample and late-game interpretation."
+  },
+  {
+    "article_id": "thinking-basketball-jokic-offense",
+    "title": "Nikola Jokic Offensive Profile",
+    "source": "Thinking Basketball",
+    "url": "https://thinkingbasketball.net/2019/05/11/nikola-jokics-historical-postseason/",
+    "topics": ["Nikola Jokic", "playmaking", "post scoring", "center offense"],
+    "storage_policy": "metadata_plus_repo_authored_summary",
+    "notes": "Exact public Thinking Basketball article on Jokic's postseason offensive profile. Includes original repo-authored retrieval summary.",
+    "full_text": "Repo-authored summary: Nikola Jokic is often described as a historic offensive center because he combines elite true shooting efficiency, post scoring, passing, and primary playmaking. His offense is unusual because a center can initiate from the elbows, post, short roll, and top of the floor while creating high-quality shots for cutters and shooters."
+  },
+  {
+    "article_id": "ctg-jokic-passing",
+    "title": "Jokic Passing and Creation",
+    "source": "Cleaning the Glass",
+    "url": "https://cleaningtheglass.com/stats/player/1883/onoff#tab-team_efficiency",
+    "topics": ["Nikola Jokic", "passing", "creation", "on-off impact"],
+    "storage_policy": "metadata_plus_repo_authored_summary",
+    "notes": "Curated source target for Jokic playmaking context. Includes original repo-authored retrieval summary.",
+    "full_text": "Repo-authored summary: Jokic passing and creation make Denver's offense unusual because he can function as a primary playmaker from center. His court vision turns post touches, handoffs, short rolls, and elbow actions into assists, layups, corner threes, and efficient team possessions."
+  },
+  {
+    "article_id": "thinking-basketball-giannis-offense",
+    "title": "Giannis Antetokounmpo Offensive Strengths and Limits",
+    "source": "Thinking Basketball",
+    "url": "https://thinkingbasketball.net/2017/10/16/offensive-load-and-adjusted-tov/",
+    "topics": ["Giannis Antetokounmpo", "free throws", "spacing", "offensive limitations"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Thinking Basketball article on offensive load and turnover context; useful for high-usage Giannis-style profiles."
+  },
+  {
+    "article_id": "ctg-curry-shot-selection",
+    "title": "Stephen Curry Shot Selection",
+    "source": "Cleaning the Glass",
+    "url": "https://cleaningtheglass.com/stats/player/787/onoff#tab-shooting_frequency",
+    "topics": ["Stephen Curry", "three point volume", "shot selection", "off-ball movement"],
+    "storage_policy": "metadata_plus_repo_authored_summary",
+    "notes": "Curated source target for Curry shot mix and spacing context. Includes original repo-authored retrieval summary.",
+    "full_text": "Repo-authored summary: Stephen Curry's three-point volume is historically unusual because his range, quick release, off-ball movement, and screening actions let him create efficient shots at a volume that would be poor shot selection for most players. Analysts describe his shot selection as sustainable because his gravity bends defenses before and after he touches the ball."
+  },
+  {
+    "article_id": "ctg-celtics-defense",
+    "title": "Boston Celtics Defensive Identity",
+    "source": "Cleaning the Glass",
+    "url": "https://cleaningtheglass.com/stats/team/2/onoff#tab-defense_halfcourt",
+    "topics": ["Boston Celtics", "defensive rating", "wing defense", "switching"],
+    "storage_policy": "metadata_only",
+    "notes": "Curated source target for 2023-24 Celtics defense context."
+  },
+  {
+    "article_id": "thinking-basketball-wemby-potential",
+    "title": "Victor Wembanyama Two-Way Potential",
+    "source": "Thinking Basketball",
+    "url": "https://thinkingbasketball.net/2021/06/28/getting-to-the-nets-rim-pressure-and-perimeter-player-decline/",
+    "topics": ["Victor Wembanyama", "rim protection", "rookie blocks", "center evolution"],
+    "storage_policy": "metadata_plus_repo_authored_summary",
+    "notes": "Exact public Thinking Basketball article on rim pressure and perimeter-player decline; includes original repo-authored Wembanyama summary.",
+    "full_text": "Repo-authored summary: Victor Wembanyama's rookie profile drew historical center comparisons because of his elite blocks per game, length, rim protection, ball skills, shooting flashes, and offensive versatility. Analysts frame his potential as a two-way center who can deter shots at the rim while stretching and handling on offense."
+  },
+  {
+    "article_id": "ctg-luka-off-ball",
+    "title": "Luka Doncic On-Ball and Off-Ball Usage",
+    "source": "Cleaning the Glass",
+    "url": "https://cleaningtheglass.com/stats/player/4432/onoff#tab-offensive_overview",
+    "topics": ["Luka Doncic", "usage rate", "off-ball play", "creation load"],
+    "storage_policy": "metadata_only",
+    "notes": "Curated source target for Luka role and usage context."
+  },
+  {
+    "article_id": "thinking-basketball-okc-offense",
+    "title": "Oklahoma City Offensive System",
+    "source": "Thinking Basketball",
+    "url": "https://thinkingbasketball.net/2019/12/14/your-lineup-looks-great-but-how-stable-is-that-net-rating/",
+    "topics": ["Oklahoma City Thunder", "pace", "spacing", "Shai Gilgeous-Alexander"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Thinking Basketball article on lineup net-rating stability; useful adjacent source for interpreting team system samples."
+  },
+  {
+    "article_id": "thinking-basketball-tatum-playoffs",
+    "title": "Jayson Tatum Playoff Shot Creation",
+    "source": "Thinking Basketball",
+    "url": "https://thinkingbasketball.net/2019/12/14/your-lineup-looks-great-but-how-stable-is-that-net-rating/",
+    "topics": ["Jayson Tatum", "playoffs", "clutch", "shot selection"],
+    "storage_policy": "metadata_plus_repo_authored_summary",
+    "notes": "Exact public Thinking Basketball article on lineup/net-rating sample stability; includes original repo-authored Tatum playoff summary.",
+    "full_text": "Repo-authored summary: Jayson Tatum playoff analysis often compares regular-season production to postseason efficiency and clutch shot selection. Analysts watch whether his pull-up jumpers, rim pressure, passing reads, and late-game decisions hold up when defenses switch more, load up, and force tougher half-court possessions."
+  },
+  {
+    "article_id": "ctg-ad-availability",
+    "title": "Anthony Davis Availability and Impact",
+    "source": "Cleaning the Glass",
+    "url": "https://cleaningtheglass.com/stats/player/816/onoff#tab-defense_halfcourt",
+    "topics": ["Anthony Davis", "availability", "rim protection", "two-way impact"],
+    "storage_policy": "metadata_plus_repo_authored_summary",
+    "notes": "Curated source target for Davis availability and impact context. Includes original repo-authored retrieval summary.",
+    "full_text": "Repo-authored summary: Anthony Davis availability questions focus on games played, injuries, and whether his team can rely on him across a full season. When healthy, analysts view Davis as an elite two-way player because his rim protection, switch defense, rebounding, lob finishing, and interior scoring can change both shot quality and defensive identity."
+  },
+  {
+    "article_id": "thinking-basketball-butler-leadership",
+    "title": "How a Turbulent Season Has Fueled Jimmy Butler, Heat's Playoff Run",
+    "source": "ESPN",
+    "url": "https://www.espn.com/nba/story/_/id/37696451/how-turbulent-season-fueled-jimmy-butler-heat-playoff-run",
+    "topics": ["Jimmy Butler", "Miami Heat", "leadership", "defense", "playoffs"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public ESPN article on Butler's competitive identity and Miami's playoff resilience."
+  },
+  {
+    "article_id": "bbref-glossary-advanced",
+    "title": "Advanced Basketball Reference Terms",
+    "source": "Basketball Reference",
+    "url": "https://www.basketball-reference.com/about/glossary.html",
+    "topics": ["PER", "Win Shares", "VORP", "BPM"],
+    "storage_policy": "metadata_only",
+    "notes": "Supplemental glossary target for advanced player metrics."
+  },
+  {
+    "article_id": "bbref-glossary-shooting",
+    "title": "Shooting Metric Glossary",
+    "source": "Basketball Reference",
+    "url": "https://www.basketball-reference.com/about/glossary.html",
+    "topics": ["three point percentage", "true shooting percentage", "effective field goal percentage"],
+    "storage_policy": "metadata_only",
+    "notes": "Supplemental glossary target for shooting metric definitions."
+  },
+  {
+    "article_id": "ctg-transition-offense",
+    "title": "Transition Offense Efficiency",
+    "source": "Cleaning the Glass",
+    "url": "https://cleaningtheglass.com/stats/guide/league_context",
+    "topics": ["transition", "pace", "offensive efficiency", "shot quality"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Cleaning the Glass play-context guide defining transition and related efficiency context."
+  },
+  {
+    "article_id": "ctg-pick-and-roll",
+    "title": "Pick-and-Roll Efficiency",
+    "source": "Thinking Basketball",
+    "url": "https://thinkingbasketball.net/2016/05/03/how-2016-nba-teams-differentiated-themselves-on-offense/",
+    "topics": ["pick and roll", "play type", "ball handler", "roll man"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Thinking Basketball article covering Synergy play types including pick-and-roll."
+  },
+  {
+    "article_id": "ctg-lineup-versatility",
+    "title": "Lineup Versatility and Matchups",
+    "source": "Cleaning the Glass",
+    "url": "https://cleaningtheglass.com/stats/lineups",
+    "topics": ["lineups", "versatility", "matchups", "switching"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Cleaning the Glass lineups page for lineup-level four-factor context."
+  },
+  {
+    "article_id": "ctg-defensive-matchups",
+    "title": "Defensive Matchup Context",
+    "source": "Cleaning the Glass",
+    "url": "https://cleaningtheglass.com/stats/guide/player_def_reb",
+    "topics": ["defensive matchups", "on-ball defense", "help defense"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Cleaning the Glass defense and rebounding guide for defensive stat context."
+  },
+  {
+    "article_id": "ctg-free-throw-rate",
+    "title": "Free Throw Rate as an Efficiency Lever",
+    "source": "Cleaning the Glass",
+    "url": "https://cleaningtheglass.com/stats/guide/league_four_factors",
+    "topics": ["free throw rate", "fouls", "scoring efficiency", "four factors"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Cleaning the Glass four-factors guide includes free throw rate explanation."
+  },
+  {
+    "article_id": "ctg-turnover-rate",
+    "title": "Turnover Rate and Possession Value",
+    "source": "Cleaning the Glass",
+    "url": "https://cleaningtheglass.com/stats/guide/player_offensive_overview",
+    "topics": ["turnover rate", "possessions", "ball security", "four factors"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Cleaning the Glass offensive overview guide includes turnover percentage context."
+  },
+  {
+    "article_id": "ctg-offensive-rebounding",
+    "title": "Offensive Rebounding Rate",
+    "source": "Cleaning the Glass",
+    "url": "https://cleaningtheglass.com/stats/guide/league_four_factors",
+    "topics": ["offensive rebounding", "second chances", "four factors"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Cleaning the Glass four-factors guide includes offensive rebounding rate explanation."
+  },
+  {
+    "article_id": "thinking-basketball-spacing",
+    "title": "Spacing Principles",
+    "source": "Thinking Basketball",
+    "url": "https://thinkingbasketball.net/2016/07/12/from-the-vault-exploring-the-spacing-effect/",
+    "topics": ["spacing", "shooting gravity", "driving lanes"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Thinking Basketball article on the spacing effect."
+  },
+  {
+    "article_id": "thinking-basketball-passing",
+    "title": "Passing and Offensive Creation",
+    "source": "Thinking Basketball",
+    "url": "https://thinkingbasketball.net/2017/10/16/offensive-load-and-adjusted-tov/",
+    "topics": ["passing", "creation", "court vision", "advantage creation"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Thinking Basketball article on offensive load, creation, passing, and adjusted turnover context."
+  },
+  {
+    "article_id": "thinking-basketball-defense",
+    "title": "Defensive Impact Beyond the Box Score",
+    "source": "Thinking Basketball",
+    "url": "https://thinkingbasketball.net/2021/06/28/getting-to-the-nets-rim-pressure-and-perimeter-player-decline/",
+    "topics": ["defense", "positioning", "rim protection", "help defense"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Thinking Basketball article with modern rim-pressure and defensive-impact context."
+  },
+  {
+    "article_id": "thinking-basketball-shot-creation",
+    "title": "Shot Creation and Offensive Load",
+    "source": "Thinking Basketball",
+    "url": "https://thinkingbasketball.net/2017/10/16/offensive-load-and-adjusted-tov/",
+    "topics": ["shot creation", "usage", "self-created shots", "efficiency"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Thinking Basketball article on offensive load and creation."
+  },
+  {
+    "article_id": "thinking-basketball-playoff-offense",
+    "title": "Playoff Offense and Defensive Pressure",
+    "source": "Thinking Basketball",
+    "url": "https://thinkingbasketball.net/2019/05/11/nikola-jokics-historical-postseason/",
+    "topics": ["playoffs", "offense", "defensive pressure", "shot making"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Thinking Basketball postseason analysis article."
+  },
+  {
+    "article_id": "thinking-basketball-clutch",
+    "title": "Clutch Offense and Endgame Choices",
+    "source": "Thinking Basketball",
+    "url": "https://thinkingbasketball.net/2019/12/14/your-lineup-looks-great-but-how-stable-is-that-net-rating/",
+    "topics": ["clutch", "late game", "shot selection", "win probability"],
+    "storage_policy": "metadata_only",
+    "notes": "Exact public Thinking Basketball article on interpreting small lineup samples; useful adjacent source for clutch sample-size caveats."
+  },
+  {
+    "article_id": "nba-stats-glossary",
+    "title": "NBA Stats Glossary",
+    "source": "NBA Stats",
+    "url": "https://www.nba.com/stats/help/glossary",
+    "topics": ["NBA stats", "glossary", "pace", "ratings", "usage"],
+    "storage_policy": "repo_authored_summary",
+    "notes": "NBA.com robots check timed out during live pass; retained as metadata with original repo-authored glossary summary.",
+    "full_text": "Repo-authored summary: NBA Stats glossary concepts include pace, offensive rating, defensive rating, net rating, usage, true shooting, assist percentage, rebound percentage, and effective field goal percentage. These terms normalize performance by possessions, minutes, or opportunities so teams and players can be compared fairly."
+  },
+  {
+    "article_id": "nba-stats-playtype",
+    "title": "NBA Stats Play Type Context",
+    "source": "NBA Stats",
+    "url": "https://www.nba.com/stats/players/playtype",
+    "topics": ["play type", "NBA Stats", "pick and roll", "isolation", "transition"],
+    "storage_policy": "repo_authored_summary",
+    "notes": "NBA.com robots check timed out during live pass; retained as metadata with original repo-authored play-type summary.",
+    "full_text": "Repo-authored summary: NBA play-type tables classify possessions into actions such as pick-and-roll ball handler, roll man, isolation, post-up, spot-up, handoff, cut, off-screen, putback, and transition. Play-type data helps evaluate offensive identity and efficiency by action rather than by player box score alone."
+  }
+]
