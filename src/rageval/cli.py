@@ -132,12 +132,13 @@ def run_command(
             raise click.BadParameter("--max-cases must be greater than zero")
         suite = suite.model_copy(update={"cases": suite.cases[:max_cases]})
 
-    _ensure_demo_data_ready(_DB_PATH)
     mode = _resolve_run_mode(live=live, offline=offline)
+    selected_metrics = _default_metrics(_parse_metric_selection(metrics), mode=mode)
     if mode == "live":
         _ensure_live_keys_ready()
+    _ensure_demo_data_ready(_DB_PATH)
+    if mode == "live":
         _ensure_live_data_ready(_DB_PATH)
-    selected_metrics = _default_metrics(_parse_metric_selection(metrics), mode=mode)
     _execute_suite(
         suite,
         output=output,
@@ -222,12 +223,13 @@ def demo_command(
         raise click.ClickException("Demo suite contains no cases.")
     suite = full_suite.model_copy(update={"cases": selected_cases})
 
-    _ensure_demo_data_ready(_DB_PATH)
     mode = _resolve_run_mode(live=live, offline=offline)
+    selected_metrics = _default_metrics(_parse_metric_selection(metrics), mode=mode)
     if mode == "live":
         _ensure_live_keys_ready()
+    _ensure_demo_data_ready(_DB_PATH)
+    if mode == "live":
         _ensure_live_data_ready(_DB_PATH)
-    selected_metrics = _default_metrics(_parse_metric_selection(metrics), mode=mode)
     _execute_suite(
         suite,
         output=output,

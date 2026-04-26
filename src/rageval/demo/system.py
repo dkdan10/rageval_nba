@@ -52,6 +52,7 @@ class HybridRAGSystem:
 
     async def answer(self, question: str) -> RAGResponse:
         started = time.perf_counter()
+        cost_started = _component_cost(self.router, self.sql_agent, self.synthesizer)
         errors: list[str] = []
         sql_result: SQLResult | None = None
         docs: list[Document] = []
@@ -72,6 +73,8 @@ class HybridRAGSystem:
                 sql_result=None,
                 routing_decision=route,
                 latency_ms=_elapsed_ms(started),
+                cost_usd=_component_cost(self.router, self.sql_agent, self.synthesizer)
+                - cost_started,
                 refused=refused,
             )
 
@@ -109,7 +112,8 @@ class HybridRAGSystem:
             sql_result=sql_result,
             routing_decision=route,
             latency_ms=_elapsed_ms(started),
-            cost_usd=_component_cost(self.synthesizer),
+            cost_usd=_component_cost(self.router, self.sql_agent, self.synthesizer)
+            - cost_started,
             refused=refused,
         )
 
@@ -118,7 +122,15 @@ def _elapsed_ms(started: float) -> float:
     return (time.perf_counter() - started) * 1000.0
 
 
-def _component_cost(component: object) -> float | None:
-    llm = getattr(component, "_llm", None)
-    cost = getattr(llm, "total_cost_usd", None)
-    return float(cost) if isinstance(cost, int | float) else None
+def _component_cost(*components: object) -> float:
+    total = 0.0
+    seen: set[int] = set()
+    for component in components:
+        llm = getattr(component, "_llm", None)
+        if llm is None or id(llm) in seen:
+            continue
+        seen.add(id(llm))
+        cost = getattr(llm, "total_cost_usd", None)
+        if isinstance(cost, int | float):
+            total += float(cost)
+    return total

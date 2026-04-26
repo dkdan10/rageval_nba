@@ -1,3 +1,5 @@
+import pytest
+
 from rageval.demo.system import HybridRAGSystem
 from rageval.types import Document, QuestionType, SQLResult
 
@@ -56,6 +58,44 @@ class FakeSynthesizer:
         if docs:
             parts.append("[article:doc#0]")
         return " ".join(parts) or "no evidence"
+
+
+class FakeCostLLM:
+    def __init__(self) -> None:
+        self.total_cost_usd = 0.0
+
+
+class CostRouter:
+    def __init__(self, llm: FakeCostLLM, route: QuestionType) -> None:
+        self._llm = llm
+        self.route = route
+
+    async def classify(self, _question: str) -> QuestionType:
+        self._llm.total_cost_usd += 0.01
+        return self.route
+
+
+class CostSQLAgent:
+    def __init__(self, llm: FakeCostLLM) -> None:
+        self._llm = llm
+
+    async def generate_and_execute(self, _question: str) -> SQLResult:
+        self._llm.total_cost_usd += 0.02
+        return SQLResult(query="SELECT 1", rows=[{"answer": 1}])
+
+
+class CostSynthesizer:
+    def __init__(self, llm: FakeCostLLM) -> None:
+        self._llm = llm
+
+    async def synthesize(
+        self,
+        _question: str,
+        sql_result: SQLResult | None = None,
+        docs: list[Document] | None = None,
+    ) -> str:
+        self._llm.total_cost_usd += 0.03
+        return "answer"
 
 
 async def test_factual_route_calls_sql_only() -> None:
@@ -137,6 +177,23 @@ async def test_unanswerable_route_refuses_without_paths() -> None:
     assert sql.calls == []
     assert rag.calls == []
     assert synth.calls == []
+
+
+async def test_response_cost_is_per_case_delta_not_cumulative() -> None:
+    llm = FakeCostLLM()
+    system = HybridRAGSystem(
+        router=CostRouter(llm, QuestionType.FACTUAL),
+        sql_agent=CostSQLAgent(llm),
+        rag_agent=FakeRAGAgent(),
+        synthesizer=CostSynthesizer(llm),
+    )
+
+    first = await system.answer("Who led PPG?")
+    second = await system.answer("Who led PPG again?")
+
+    assert first.cost_usd == 0.06
+    assert second.cost_usd == pytest.approx(0.06)
+    assert llm.total_cost_usd == pytest.approx(0.12)
 
 
 async def test_path_errors_do_not_crash_response() -> None:

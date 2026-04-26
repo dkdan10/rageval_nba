@@ -28,7 +28,7 @@ article retrieval, and Anthropic-backed routing/SQL/synthesis. It is only used
 when the required API keys and local vector embeddings are available.
 
 Latest live run, 2026-04-26: `rageval run examples/nba_test_suite.yaml --live
---verbose --no-cache` completed 42 cases in 217.35s with $3.086037 Anthropic
+--verbose --no-cache` completed 42 cases in 231.01s with $0.197102 Anthropic
 LLM cost, 0 overall errors, and 0 metric errors. Retrieval reached
 `prefix_recall@5 = 0.780`, `prefix_ndcg@5 = 0.682`, and
 `prefix_reciprocal_rank = 0.665`; refusal scored `1.000`. Live SQL equivalence
