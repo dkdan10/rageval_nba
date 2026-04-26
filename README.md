@@ -1,76 +1,178 @@
 # rageval-nba
 
-Reference NBA hybrid RAG evaluation demo.
+`rageval-nba` is a compact evaluation harness for hybrid RAG systems: systems
+that must route each question to text retrieval, SQL, both paths, or a clean
+refusal. The reference demo evaluates an NBA analytics assistant against a
+handcrafted suite with structured stats, curated basketball-writing sources,
+deterministic retrieval metrics, SQL checks, refusal checks, and calibrated
+LLM-as-judge metrics.
 
-## Milestone 7 Corpus
+![HTML report preview](docs/assets/report-preview.png)
 
-For the local demo/report path, build the deterministic seed database and cached
-corpus, then run the HTML report command:
+## Why This Exists
+
+Most RAG demos evaluate only vector retrieval or final-answer text. Production
+systems are often hybrid: a question like "Who led the NBA in points per game?"
+belongs in SQL, while "Why do analysts prefer true shooting percentage?" belongs
+in retrieved writing, and "How do Jokic's stats support analyst claims about his
+offense?" needs both. A useful evaluator has to measure routing, retrieval,
+structured correctness, answer quality, and refusal behavior separately.
+
+This project provides that end-to-end loop in a small NBA domain. The default
+demo is deterministic and offline after setup: it builds a seed SQLite database,
+loads a curated corpus manifest into `article_chunks`, runs the reference
+`HybridRAGSystem`, and writes a screenshot-worthy HTML report.
+
+## Quickstart
 
 ```bash
+uv sync
 uv run python scripts/build_stats_db.py
 uv run python scripts/build_corpus.py --from-cache
+uv run rageval demo --output demo-report.html
 uv run rageval run examples/nba_test_suite.yaml --output report.html
 ```
 
-Rebuild the corpus after every stats DB rebuild. `build_stats_db.py` recreates
-`data/nba.db`, so any previously loaded `article_chunks` are removed until
-`scripts/build_corpus.py --from-cache` is run again.
+Open `demo-report.html` for a 5-case smoke report or `report.html` for the full
+42-case NBA suite. Generated reports, `data/nba.db`, raw fetched pages, and raw
+cache files are gitignored.
 
-Real NBA API ingestion is still available explicitly when network access and
-source availability are acceptable:
-
-```bash
-uv run python scripts/build_stats_db.py --mode real
-```
-
-For a safer resumable pull, reuse raw JSON already saved under `data/raw/`, set
-a network timeout, and keep a small pause between NBA Stats calls:
+If you rebuild `data/nba.db`, rebuild corpus chunks afterward:
 
 ```bash
-uv run python scripts/build_stats_db.py --mode real --resume-raw --timeout-seconds 30 --rate-limit-seconds 1
+uv run python scripts/build_corpus.py --from-cache
 ```
 
-The tracked corpus source list lives in `examples/corpus/articles.json`. It is a
-curated metadata manifest with stable article IDs, source URLs, topics, storage
-policies, and short notes. Raw fetched pages are intentionally not tracked:
-`scripts/build_corpus.py --fetch` writes them to the gitignored
-`data/raw/corpus/` cache, and `scripts/build_corpus.py --from-cache` builds
-`articles` and `article_chunks` in the local SQLite database.
+## What The Demo Includes
 
-Some manifest records include concise repo-authored summaries so the demo can
-remain reproducible without committing copyrighted article text or depending on
-blocked source pages. Live fetches respect robots.txt and may vary by network,
-source availability, and publisher controls. The demo retriever currently uses a
-deterministic lexical fallback over `article_chunks`; it is not production vector
-retrieval and does not require paid embedding calls.
+- 42 test cases across factual, analytical, hybrid, and
+  unanswerable/adversarial categories.
+- A deterministic seed NBA stats database for local demos and tests.
+- A curated 40-source article manifest in `examples/corpus/articles.json`.
+- A lexical fallback retriever over `article_chunks`; this is intentionally not
+  production vector retrieval.
+- A reference `HybridRAGSystem` with router, SQL path, RAG path, synthesizer, and
+  clean refusal behavior.
+- An HTML report with aggregate scores, route diagnostics, per-category
+  breakdowns, highlighted failure modes, charts, SQL evidence, retrieved
+  evidence, and per-case drilldowns.
 
-The HTML report uses Pico.css and Chart.js from public CDNs for lightweight
-styling and charts. The demo CLI reports article-prefix retrieval metrics
-because curated article IDs are stable while chunk indexes can change when
-cached source pages change.
-
-The report includes a per-category breakdown (mean metric scores by factual,
-analytical, hybrid, and unanswerable/adversarial category) and a highlighted
-failure-mode panel listing metric errors, zero-score metrics, refusal
-disagreements, SQL errors, and missing routes.
-
-For fast feedback during iteration, run a 4-5 case representative subset:
+## CLI
 
 ```bash
-uv run rageval demo --output demo-report.html
+# Fast feedback: one representative sample per route/category.
+uv run rageval demo --output demo-report.html --verbose
+
+# Full NBA suite.
+uv run rageval run examples/nba_test_suite.yaml --output report.html
+
+# Run a deterministic metric subset.
+uv run rageval run examples/nba_test_suite.yaml \
+  --output report.html \
+  --metrics refusal,prefix_recall@5
+
+# Deterministic routing calibration; no API key required.
+uv run rageval calibrate routing --threshold 0.8
 ```
 
-Add `--verbose` to either `rageval run` or `rageval demo` to print one
-case-by-case progress line (case id, route, refused flag, metric and error
-counts).
+`rageval run` also supports `--max-cases`, repeated `--metrics`, `--verbose`,
+and `--no-cache`. The default CLI path avoids live LLM calls. `--no-cache` is
+accepted for plan parity and matters when running LLM-backed calibration.
 
-Use `--metrics` to run a deterministic subset, for example
-`--metrics refusal,prefix_recall@5`. The CLI also accepts `--no-cache` for plan
-parity; the default deterministic demo path does not use the LLM cache. Judge
-calibration is available through `rageval calibrate <judge_name>`, delegating to
-the same calibration implementation used by `scripts/calibrate_judge.py`.
+## Metrics Explained
 
-The seed database is intentionally small. The demo SQL path uses real table
-queries where the seed fixture contains the requested rows and deterministic
-literal rows for examples outside that offline fixture.
+| Metric | Applies To | What It Checks |
+| --- | --- | --- |
+| `numeric_tolerance` | Factual cases with `expected_numeric` | Extracts numbers from the answer and checks tolerance. |
+| `sql_equivalence` | Cases with `expected_sql_rows` | Compares SQL rows; hybrid cases allow expected rows as a subset. |
+| `refusal` | All cases | Verifies the system refuses exactly when `should_refuse` is true. |
+| `prefix_precision@5` | Cases with `relevant_doc_ids` | Fraction of top-5 retrieved chunks whose article ID prefix is relevant. |
+| `prefix_recall@5` | Cases with `relevant_doc_ids` | Fraction of relevant article prefixes reached in top-5 retrieval. |
+| `prefix_ndcg@5` | Cases with `relevant_doc_ids` | Rank-aware retrieval quality over article ID prefixes. |
+| `prefix_reciprocal_rank` | Cases with `relevant_doc_ids` | Reciprocal rank of the first relevant article-prefix match. |
+| `faithfulness` | LLM judge calibration / optional use | Whether answer claims are supported by retrieved evidence. |
+| `relevance` | LLM judge calibration / optional use | Whether an answer directly addresses the question. |
+| `correctness` | LLM judge calibration / optional use | 0-4 answer correctness with position-swap mitigation. |
+| `routing` | Calibration / route checks | Whether routing decision matches the labeled question type. |
+
+Skipped metric cells in the report are not failures; they mean the metric is not
+applicable for that case.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    suite["TestSuite YAML"] --> evaluator["Evaluator"]
+    evaluator --> system["HybridRAGSystem"]
+    system --> router["Router"]
+    router --> sql["SQLAgent + SQLite stats"]
+    router --> rag["RAGAgent + article_chunks"]
+    sql --> synth["Synthesizer"]
+    rag --> synth
+    synth --> response["RAGResponse"]
+    response --> metrics["Structured + retrieval metrics"]
+    metrics --> report["HTML report"]
+```
+
+## Calibration Results
+
+Live judge calibration was recorded on 2026-04-25 with
+`claude-haiku-4-5-20251001`. See
+[`docs/judge_calibration.md`](docs/judge_calibration.md) for method details,
+fixtures, prompt notes, and correctness position-swap evidence. Prompt-history
+notes live in [`docs/prompt_evolution.md`](docs/prompt_evolution.md).
+
+| Judge | Agreement | Threshold | Status |
+| --- | ---: | ---: | --- |
+| Faithfulness | 100% (10/10) | >= 80% | PASS |
+| Relevance | 100% (10/10) | >= 80% | PASS |
+| Correctness | 80% (8/10) | >= 80% | PASS |
+| Routing | 100% (10/10) | >= 80% | PASS, deterministic |
+
+## LLM-as-Judge Caveats
+
+LLM judges are useful because they scale qualitative checks such as
+faithfulness, relevance, and answer correctness, but they are not ground truth.
+They can show position bias, verbosity bias, prompt sensitivity, and plausible
+reasoning that still reaches the wrong score. `CorrectnessJudge` mitigates one
+known issue by scoring the candidate/reference order twice and surfacing
+`forward_score`, `swapped_score`, `disagreement`, and `disagreement_flag`.
+
+This design follows the same caution raised by Zheng et al. 2023,
+["Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena"](https://arxiv.org/abs/2306.05685):
+LLM-as-judge can approximate human preference at useful agreement rates, but it
+must be calibrated, measured, and treated as a signal rather than an oracle.
+
+## Data And Corpus Notes
+
+The tracked corpus source list is `examples/corpus/articles.json`. It contains
+metadata, source URLs, topics, storage policies, and short repo-authored
+summaries where needed. Raw fetched pages are intentionally not tracked:
+`scripts/build_corpus.py --fetch` writes them under the gitignored
+`data/raw/corpus/` cache, and `--from-cache` builds local SQLite rows.
+
+Real NBA API ingestion is available, but the default demo uses seed mode to
+avoid timeouts and rate limits:
+
+```bash
+uv run python scripts/build_stats_db.py --mode real --resume-raw \
+  --timeout-seconds 30 --rate-limit-seconds 1
+```
+
+Live Anthropic-backed judge calibration requires `ANTHROPIC_API_KEY`. The
+deterministic routing judge does not.
+
+## Package Readiness
+
+The package exposes the `rageval` console script and includes the Jinja report
+template plus a bundled demo suite resource so `rageval demo` does not depend on
+a repo-root `examples/` directory. The project is prepared for `uv build`; actual
+publishing requires a PyPI token and should be done from a clean release state.
+
+## Roadmap
+
+- Publish `v0.1.0` to PyPI after release token setup.
+- Record a 90-second demo video scrolling through the report.
+- Add optional vector retrieval when embeddings/sqlite-vec are available.
+- Add hosted sample report or GitHub Pages preview.
+- Broaden examples beyond NBA once the evaluation API stabilizes.

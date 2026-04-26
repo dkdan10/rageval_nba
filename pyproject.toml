@@ -6,6 +6,15 @@ authors = [{name = "Daniel Keinan", email = "dk3425@columbia.edu"}]
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
+keywords = ["rag", "evaluation", "hybrid-rag", "llm-as-judge", "nba", "sqlite"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "anthropic>=0.40.0",
     "pydantic>=2.9.0",
@@ -31,6 +40,10 @@ dev = [
 
 [project.scripts]
 rageval = "rageval.cli:main"
+
+[project.urls]
+Repository = "https://github.com/dkdan10/rageval_nba"
+Issues = "https://github.com/dkdan10/rageval_nba/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rageval"]
