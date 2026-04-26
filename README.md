@@ -28,13 +28,13 @@ article retrieval, and Anthropic-backed routing/SQL/synthesis. It is only used
 when the required API keys and local vector embeddings are available.
 
 Latest live run, 2026-04-26: `rageval run examples/nba_test_suite.yaml --live
---verbose --no-cache` completed 42 cases in 203.53s with $2.945970 Anthropic
+--verbose --no-cache` completed 42 cases in 217.35s with $3.086037 Anthropic
 LLM cost, 0 overall errors, and 0 metric errors. Retrieval reached
 `prefix_recall@5 = 0.780`, `prefix_ndcg@5 = 0.682`, and
-`prefix_reciprocal_rank = 0.665`; refusal scored `1.000`. Structured SQL scores
-remain weak in live mode (`sql_equivalence = 0.000`, `numeric_tolerance = 0.500`),
-which is the clearest current improvement area for the live SQL prompt/schema
-alignment.
+`prefix_reciprocal_rank = 0.665`; refusal scored `1.000`. Live SQL equivalence
+scored 12/12 = `1.000`, with 2 explicit skips for Basketball Reference-only
+stats that are unavailable in the cached nba_api ingestion. Numeric tolerance
+scored `0.625`.
 
 ## Quickstart
 
@@ -109,7 +109,7 @@ calibration.
 | Metric | Applies To | What It Checks |
 | --- | --- | --- |
 | `numeric_tolerance` | Factual cases with `expected_numeric` | Extracts numbers from the answer and checks tolerance. |
-| `sql_equivalence` | Cases with `expected_sql_rows` | Compares SQL rows; hybrid cases allow expected rows as a subset. |
+| `sql_equivalence` | Cases with `expected_sql_rows` or live `live_expected_sql_rows` | Compares SQL rows; hybrid cases allow expected rows as a subset. Live mode uses verified real-DB expectations and skips stats not present in nba_api. |
 | `refusal` | All cases | Verifies the system refuses exactly when `should_refuse` is true. |
 | `prefix_precision@5` | Cases with `relevant_doc_ids` | Fraction of top-5 retrieved chunks whose article ID prefix is relevant. |
 | `prefix_recall@5` | Cases with `relevant_doc_ids` | Fraction of relevant article prefixes reached in top-5 retrieval. |

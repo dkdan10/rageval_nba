@@ -391,13 +391,14 @@ async def test_agent_result_is_list_of_dicts(db_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Prompt file loading (Fix: sql_agent must load from prompts/sql_agent/v1.txt)
+# Prompt file loading (Fix: sql_agent must load from prompts/sql_agent/v2.txt)
 # ---------------------------------------------------------------------------
 
 
 def test_prompt_file_exists() -> None:
     from rageval.demo.sql_agent import _PROMPT_PATH
     assert _PROMPT_PATH.exists(), f"Prompt file missing: {_PROMPT_PATH}"
+    assert _PROMPT_PATH.name == "v2.txt"
 
 
 def test_agent_system_prompt_matches_prompt_file(db_path: Path) -> None:
@@ -410,6 +411,17 @@ def test_prompt_file_contains_select_rule() -> None:
     from rageval.demo.sql_agent import _PROMPT_PATH
     content = _PROMPT_PATH.read_text(encoding="utf-8")
     assert "SELECT" in content
+
+
+def test_prompt_file_contains_live_alias_guidance() -> None:
+    from rageval.demo.sql_agent import _PROMPT_PATH
+    content = _PROMPT_PATH.read_text(encoding="utf-8")
+    assert "players.full_name AS full_name" in content
+    assert "teams.team_name AS team_name" in content
+    assert "LIKE 'Nikola J%'" in content
+    assert "fg3_attempted" in content
+    assert "Use table aliases consistently" in content
+    assert "g.game_type" in content
 
 
 # ---------------------------------------------------------------------------

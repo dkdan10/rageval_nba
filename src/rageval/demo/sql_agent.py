@@ -14,7 +14,7 @@ from rageval.llm_client import LLMClient
 from rageval.types import SQLResult
 
 _DB_PATH = Path(__file__).parents[3] / "data" / "nba.db"
-_PROMPT_PATH = Path(__file__).parents[3] / "prompts" / "sql_agent" / "v1.txt"
+_PROMPT_PATH = Path(__file__).parents[3] / "prompts" / "sql_agent" / "v2.txt"
 _MODEL = "claude-haiku-4-5-20251001"
 _TOOL_NAME = "run_sql"
 _MAX_ROWS = 500

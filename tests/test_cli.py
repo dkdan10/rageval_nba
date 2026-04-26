@@ -9,7 +9,14 @@ from click.testing import CliRunner
 from rageval import cli
 from rageval.cli import main
 from rageval.demo.system import HybridRAGSystem
-from rageval.types import Document, QuestionType, RAGResponse, TestCase, TestSuite
+from rageval.types import (
+    Document,
+    QuestionType,
+    RAGResponse,
+    SQLResult,
+    TestCase,
+    TestSuite,
+)
 from scripts.build_stats_db import _init_schema
 
 
@@ -484,6 +491,121 @@ def test_default_cli_metrics_are_case_aware() -> None:
         "numeric_tolerance",
         "refusal",
     ]
+
+
+def test_offline_cli_sql_metric_uses_expected_sql_rows() -> None:
+    metric = next(
+        metric for metric in cli._default_metrics(mode="offline")
+        if cli._cli_metric_name(metric) == "sql_equivalence"
+    )
+    case = TestCase(
+        id="factual",
+        question="Who led in PPG?",
+        question_type=QuestionType.FACTUAL,
+        expected_sql_rows=[{"player_name": "Luka Dončić"}],
+        live_expected_sql_rows=[{"full_name": "Joel Embiid"}],
+    )
+    response = RAGResponse(
+        answer="answer",
+        sql_result=SQLResult(
+            query="SELECT 'Luka Dončić'",
+            rows=[{"player_name": "Luka Dončić"}],
+        ),
+    )
+
+    result = metric(case, response)
+
+    assert result is not None
+    assert result.value == pytest.approx(1.0)
+    assert result.details.get("expected_source") is None
+
+
+def test_live_cli_sql_metric_uses_live_expected_sql_rows() -> None:
+    metric = next(
+        metric for metric in cli._default_metrics(mode="live")
+        if cli._cli_metric_name(metric) == "sql_equivalence"
+    )
+    case = TestCase(
+        id="factual",
+        question="Who led in PPG?",
+        question_type=QuestionType.FACTUAL,
+        expected_sql_rows=[{"player_name": "Luka Dončić"}],
+        live_expected_sql_rows=[{"full_name": "Joel Embiid"}],
+    )
+    response = RAGResponse(
+        answer="answer",
+        sql_result=SQLResult(
+            query="SELECT 'Joel Embiid'",
+            rows=[{"full_name": "Joel Embiid"}],
+        ),
+    )
+
+    result = metric(case, response)
+
+    assert result is not None
+    assert result.value == pytest.approx(1.0)
+    assert result.details["expected_source"] == "live_expected_sql_rows"
+
+
+def test_live_cli_sql_metric_emits_skip_when_live_expected_rows_missing() -> None:
+    metric = next(
+        metric for metric in cli._default_metrics(mode="live")
+        if cli._cli_metric_name(metric) == "sql_equivalence"
+    )
+    case = TestCase(
+        id="factual",
+        question="Who led in PPG?",
+        question_type=QuestionType.FACTUAL,
+        expected_sql_rows=[{"player_name": "Luka Dončić"}],
+    )
+    response = RAGResponse(
+        answer="answer",
+        sql_result=SQLResult(
+            query="SELECT 'Luka Dončić'",
+            rows=[{"player_name": "Luka Dončić"}],
+        ),
+    )
+
+    result = metric(case, response)
+
+    assert result is not None
+    assert result.metric_name == "sql_equivalence"
+    assert result.value is None
+    assert result.details["skipped"] is True
+    assert "live_expected_sql_rows" in result.details["reason"]
+
+
+def test_live_cli_sql_metric_not_applicable_without_any_expected_rows() -> None:
+    metric = next(
+        metric for metric in cli._default_metrics(mode="live")
+        if cli._cli_metric_name(metric) == "sql_equivalence"
+    )
+    case = TestCase(
+        id="analytical",
+        question="What are the four factors?",
+        question_type=QuestionType.ANALYTICAL,
+    )
+
+    assert metric(case, RAGResponse(answer="answer")) is None
+
+
+def test_live_metric_filter_preserves_sql_skip_semantics() -> None:
+    metrics = cli._default_metrics({"sql_equivalence"}, mode="live")
+    case = TestCase(
+        id="factual",
+        question="Who led in PPG?",
+        question_type=QuestionType.FACTUAL,
+        expected_sql_rows=[{"player_name": "Luka Dončić"}],
+    )
+
+    results = [
+        result
+        for metric in metrics
+        if (result := metric(case, RAGResponse(answer="answer"))) is not None
+    ]
+
+    assert [result.metric_name for result in results] == ["sql_equivalence"]
+    assert results[0].details["skipped"] is True
 
 
 def test_default_cli_retrieval_metrics_match_article_prefixes() -> None:

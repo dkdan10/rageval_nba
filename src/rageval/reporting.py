@@ -96,8 +96,17 @@ def _metric_summaries(result: EvaluationResult) -> list[dict[str, Any]]:
 
     summaries: list[dict[str, Any]] = []
     for metric_name, metric_results in sorted(by_metric.items()):
-        successes = [m for m in metric_results if m.error is None]
+        explicit_skips = [m for m in metric_results if m.details.get("skipped")]
+        successes = [
+            m
+            for m in metric_results
+            if m.error is None and m.value is not None and not m.details.get("skipped")
+        ]
         errors = [m for m in metric_results if m.error is not None]
+        skipped_count = len(explicit_skips) + max(
+            len(result.case_results) - len(metric_results),
+            0,
+        )
         summaries.append(
             {
                 "metric_name": metric_name,
@@ -106,7 +115,8 @@ def _metric_summaries(result: EvaluationResult) -> list[dict[str, Any]]:
                 "successful_count": len(successes),
                 "error_count": len(errors),
                 "total_count": len(metric_results),
-                "skipped_count": max(len(result.case_results) - len(metric_results), 0),
+                "skipped_count": skipped_count,
+                "explicit_skipped_count": len(explicit_skips),
                 "case_count": len(result.case_results),
             }
         )
@@ -184,7 +194,9 @@ def _category_breakdown(result: EvaluationResult) -> dict[str, Any]:
                     if m.metric_name != metric_name:
                         continue
                     emitted_count += 1
-                    if m.error is None:
+                    if m.details.get("skipped"):
+                        continue
+                    if m.error is None and m.value is not None:
                         successful_values.append(m.value)
                     else:
                         error_count += 1
@@ -256,6 +268,18 @@ def _failure_modes(result: EvaluationResult) -> list[dict[str, Any]]:
                         "issue_type": "metric_error",
                         "metric_name": m.metric_name,
                         "explanation": _short(m.error, 120),
+                    }
+                )
+                continue
+            if m.details.get("skipped"):
+                issues.append(
+                    {
+                        "case_id": cr.case_id,
+                        "category": category_label,
+                        "category_key": category_key,
+                        "issue_type": "metric_skipped",
+                        "metric_name": m.metric_name,
+                        "explanation": _short(str(m.details.get("reason")), 120),
                     }
                 )
                 continue

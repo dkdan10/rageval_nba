@@ -114,6 +114,7 @@ async def calibrate_correctness(llm: LLMClient | None = None, no_cache: bool = F
         )
         resp = RAGResponse(answer=str(c["answer"]))
         result = await judge.evaluate(tc, resp)
+        assert result.value is not None
         scores.append(result.value)
         human_scores.append(int(c["human_score"]))
     return correctness_agreement(scores, human_scores)

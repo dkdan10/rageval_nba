@@ -132,12 +132,12 @@ def run_command(
             raise click.BadParameter("--max-cases must be greater than zero")
         suite = suite.model_copy(update={"cases": suite.cases[:max_cases]})
 
-    selected_metrics = _default_metrics(_parse_metric_selection(metrics))
     _ensure_demo_data_ready(_DB_PATH)
     mode = _resolve_run_mode(live=live, offline=offline)
     if mode == "live":
         _ensure_live_keys_ready()
         _ensure_live_data_ready(_DB_PATH)
+    selected_metrics = _default_metrics(_parse_metric_selection(metrics), mode=mode)
     _execute_suite(
         suite,
         output=output,
@@ -222,12 +222,12 @@ def demo_command(
         raise click.ClickException("Demo suite contains no cases.")
     suite = full_suite.model_copy(update={"cases": selected_cases})
 
-    selected_metrics = _default_metrics(_parse_metric_selection(metrics))
     _ensure_demo_data_ready(_DB_PATH)
     mode = _resolve_run_mode(live=live, offline=offline)
     if mode == "live":
         _ensure_live_keys_ready()
         _ensure_live_data_ready(_DB_PATH)
+    selected_metrics = _default_metrics(_parse_metric_selection(metrics), mode=mode)
     _execute_suite(
         suite,
         output=output,
@@ -297,11 +297,17 @@ def _execute_suite(
             metric_errors = sum(
                 1 for metric in case_result.metric_results if metric.error is not None
             )
+            metric_skips = sum(
+                1
+                for metric in case_result.metric_results
+                if metric.details.get("skipped")
+            )
             click.echo(
                 f"[{case_result.case_id}] route={route} "
                 f"refused={'true' if case_result.response.refused else 'false'} "
                 f"metrics={len(case_result.metric_results)} "
-                f"errors={metric_errors}"
+                f"errors={metric_errors} "
+                f"skipped={metric_skips}"
             )
 
     click.echo(f"Suite: {result.suite_name}")
@@ -339,10 +345,22 @@ def _select_demo_cases(cases: list[TestCase], target: int) -> list[TestCase]:
     return selected
 
 
-def _default_metrics(selected: set[str] | None = None) -> list[_CliMetric]:
+def _default_metrics(
+    selected: set[str] | None = None,
+    *,
+    mode: _RunMode = "offline",
+) -> list[_CliMetric]:
+    sql_metric: _CliMetric
+    if mode == "live":
+        sql_metric = _LiveSQLEquivalenceMetric()
+    else:
+        sql_metric = _WhenApplicable(
+            SQLEquivalenceMetric(),
+            lambda case: case.expected_sql_rows is not None,
+        )
     metrics: list[_CliMetric] = [
         _WhenApplicable(NumericToleranceMetric(), lambda case: case.expected_numeric is not None),
-        _WhenApplicable(SQLEquivalenceMetric(), lambda case: case.expected_sql_rows is not None),
+        sql_metric,
         RefusalMetric(),
         _WhenApplicable(PrefixPrecisionAtK(5), lambda case: bool(case.relevant_doc_ids)),
         _WhenApplicable(PrefixRecallAtK(5), lambda case: bool(case.relevant_doc_ids)),
@@ -485,6 +503,34 @@ class _WhenApplicable:
         if not self.applies(case):
             return None
         return self.metric(case, response)
+
+
+class _LiveSQLEquivalenceMetric:
+    metric_name = "sql_equivalence"
+
+    def __init__(self) -> None:
+        self.metric = SQLEquivalenceMetric()
+
+    def __call__(self, case: TestCase, response: RAGResponse) -> MetricResult | None:
+        if case.expected_sql_rows is None and case.live_expected_sql_rows is None:
+            return None
+        if case.live_expected_sql_rows is None:
+            return MetricResult(
+                metric_name=self.metric_name,
+                case_id=case.id,
+                value=None,
+                details={
+                    "skipped": True,
+                    "reason": "live_expected_sql_rows is not set for this case",
+                    "mode": "live",
+                },
+            )
+        live_case = case.model_copy(
+            update={"expected_sql_rows": case.live_expected_sql_rows},
+        )
+        result = self.metric(live_case, response)
+        result.details["expected_source"] = "live_expected_sql_rows"
+        return result
 
 
 class PrefixPrecisionAtK:

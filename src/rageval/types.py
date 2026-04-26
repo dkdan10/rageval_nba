@@ -40,6 +40,15 @@ class TestCase(BaseModel):
     question_type: QuestionType
 
     expected_sql_rows: list[dict[str, Any]] | None = None
+    live_expected_sql_rows: list[dict[str, Any]] | None = Field(
+        default=None,
+        description=(
+            "Live-mode SQL rows for real DB evaluation. Parallel field rather than "
+            "mode-keyed dict for v0.1 simplicity. If additional fields require "
+            "mode-specific values (expected_answer, relevant_doc_ids), refactor to "
+            "a mode-keyed structure rather than continuing to add `live_*` shadows."
+        ),
+    )
     expected_numeric: float | None = None
     numeric_tolerance: float = 0.01
 
@@ -110,7 +119,7 @@ class MetricResult(BaseModel):
 
     metric_name: str
     case_id: str
-    value: float
+    value: float | None
     details: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
 

@@ -169,6 +169,11 @@
                     {{ summary.total_count }} emitted /
                     {{ summary.skipped_count }} skipped of
                     {{ summary.case_count }} cases
+                    {% if summary.explicit_skipped_count %}
+                      <br><span class="muted">
+                        {{ summary.explicit_skipped_count }} explicit skip(s)
+                      </span>
+                    {% endif %}
                   </td>
                   <td>
                     {% if summary.error_count > 0 %}
@@ -469,9 +474,15 @@
                     <tr{% if metric.error %} class="metric-error"{% endif %}>
                       <td>{{ metric.metric_name }}</td>
                       <td>
-                        <span class="badge badge-{{ metric.value|score_class }}">
-                          {{ "%.3f"|format(metric.value) }}
-                        </span>
+                        {% if metric.details.skipped %}
+                          <span class="badge badge-score-na">skipped</span>
+                        {% elif metric.value is none %}
+                          <span class="badge badge-score-na">n/a</span>
+                        {% else %}
+                          <span class="badge badge-{{ metric.value|score_class }}">
+                            {{ "%.3f"|format(metric.value) }}
+                          </span>
+                        {% endif %}
                       </td>
                       <td>
                         {% if metric.error %}

@@ -98,6 +98,7 @@ def test_test_case_minimal() -> None:
     assert case.should_refuse is False
     assert case.numeric_tolerance == 0.01
     assert case.expected_sql_rows is None
+    assert case.live_expected_sql_rows is None
     assert case.expected_numeric is None
     assert case.expected_answer is None
     assert case.metadata == {}
@@ -109,6 +110,9 @@ def test_test_case_factual_full() -> None:
         question="Who led in PPG?",
         question_type=QuestionType.FACTUAL,
         expected_sql_rows=[{"player_name": "Luka Dončić", "points_per_game": 33.9}],
+        live_expected_sql_rows=[
+            {"full_name": "Joel Embiid", "points_per_game": 34.7}
+        ],
         expected_numeric=33.9,
         numeric_tolerance=0.05,
         expected_answer="Luka Dončić led with 33.9 PPG.",
@@ -116,6 +120,33 @@ def test_test_case_factual_full() -> None:
     assert case.expected_numeric == 33.9
     assert case.expected_sql_rows is not None
     assert case.expected_sql_rows[0]["player_name"] == "Luka Dončić"
+    assert case.live_expected_sql_rows is not None
+    assert case.live_expected_sql_rows[0]["full_name"] == "Joel Embiid"
+
+
+def test_test_case_live_expected_sql_rows_optional() -> None:
+    case = TestCase(id="t1", question="Q?", question_type=QuestionType.FACTUAL)
+
+    assert case.live_expected_sql_rows is None
+
+
+def test_test_case_live_expected_sql_rows_loads_from_dict() -> None:
+    case = TestCase.model_validate(
+        {
+            "id": "factual-live",
+            "question": "Who led in PPG?",
+            "question_type": "factual",
+            "expected_sql_rows": [{"player_name": "Luka Dončić"}],
+            "live_expected_sql_rows": [
+                {"full_name": "Joel Embiid", "points_per_game": 34.7}
+            ],
+        }
+    )
+
+    assert case.expected_sql_rows == [{"player_name": "Luka Dončić"}]
+    assert case.live_expected_sql_rows == [
+        {"full_name": "Joel Embiid", "points_per_game": 34.7}
+    ]
 
 
 def test_test_case_analytical() -> None:
@@ -223,7 +254,38 @@ def test_from_yaml_factual_fields() -> None:
     factual = next(c for c in suite.cases if c.id == "factual-001")
     assert factual.expected_sql_rows is not None
     assert factual.expected_sql_rows[0]["player_name"] == "Luka Dončić"
+    assert factual.live_expected_sql_rows is None
     assert factual.expected_answer is not None
+
+
+def test_from_yaml_live_expected_sql_rows(tmp_path: Path) -> None:
+    path = tmp_path / "suite.yaml"
+    path.write_text(
+        """
+name: live-suite
+cases:
+  - id: factual-live
+    question: Who led in PPG?
+    question_type: factual
+    expected_sql_rows:
+      - player_name: Luka Dončić
+        points_per_game: 33.9
+    live_expected_sql_rows:
+      - full_name: Joel Embiid
+        points_per_game: 34.7
+""",
+        encoding="utf-8",
+    )
+
+    suite = TestSuite.from_yaml(str(path))
+
+    case = suite.cases[0]
+    assert case.expected_sql_rows == [
+        {"player_name": "Luka Dončić", "points_per_game": 33.9}
+    ]
+    assert case.live_expected_sql_rows == [
+        {"full_name": "Joel Embiid", "points_per_game": 34.7}
+    ]
 
 
 def test_from_yaml_numeric_tolerance() -> None:

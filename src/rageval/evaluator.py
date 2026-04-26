@@ -148,7 +148,11 @@ def _aggregate_scores(case_results: Sequence[CaseResult]) -> dict[str, float]:
     values_by_metric: dict[str, list[float]] = defaultdict(list)
     for case_result in case_results:
         for metric_result in case_result.metric_results:
-            if metric_result.error is None:
+            if (
+                metric_result.error is None
+                and metric_result.value is not None
+                and not metric_result.details.get("skipped")
+            ):
                 values_by_metric[metric_result.metric_name].append(metric_result.value)
 
     return {

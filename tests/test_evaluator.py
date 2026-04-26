@@ -131,6 +131,29 @@ async def test_errored_metric_results_are_excluded_from_aggregates() -> None:
     assert "metric blew up" in failed.error
 
 
+async def test_skipped_metric_results_are_excluded_from_aggregates() -> None:
+    class SkippedMetric:
+        metric_name = "skipped_score"
+
+        def __call__(self, case: TestCase, response: RAGResponse) -> MetricResult:  # noqa: ARG002
+            return MetricResult(
+                metric_name=self.metric_name,
+                case_id=case.id,
+                value=None,
+                details={"skipped": True, "reason": "not applicable"},
+            )
+
+    result = await Evaluator(metrics=[SyncMetric(), SkippedMetric()]).evaluate(
+        FakeSystem(),
+        _suite(1),
+    )
+
+    assert result.aggregate_scores == {"sync_score": 1.0}
+    skipped = result.case_results[0].metric_results[1]
+    assert skipped.metric_name == "skipped_score"
+    assert skipped.value is None
+
+
 async def test_none_metric_result_is_skipped() -> None:
     result = await Evaluator(metrics=[SyncMetric(), SkippingMetric()]).evaluate(
         FakeSystem(),

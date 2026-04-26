@@ -120,6 +120,43 @@ def test_render_html_report_renders_route_badges_and_charts() -> None:
     assert 'id="coverage-chart"' in html
 
 
+def test_render_html_report_renders_explicit_metric_skips() -> None:
+    result = EvaluationResult(
+        suite_name="skip-suite",
+        system_name="demo-system",
+        run_at=datetime(2026, 4, 25, tzinfo=UTC),
+        case_results=[
+            CaseResult(
+                case_id="case-001",
+                question="Q?",
+                question_type=QuestionType.FACTUAL,
+                response=RAGResponse(answer="answer"),
+                metric_results=[
+                    MetricResult(
+                        metric_name="sql_equivalence",
+                        case_id="case-001",
+                        value=None,
+                        details={
+                            "skipped": True,
+                            "reason": "live_expected_sql_rows is not set",
+                        },
+                    )
+                ],
+            )
+        ],
+        aggregate_scores={},
+        total_cost_usd=0.0,
+        total_duration_seconds=0.1,
+    )
+
+    html = render_html_report(result)
+
+    assert "skipped" in html
+    assert "explicit skip(s)" in html
+    assert "live_expected_sql_rows is not set" in html
+    assert "metric_skipped" in html
+
+
 def test_render_html_report_escapes_unsafe_html() -> None:
     html = render_html_report(_fake_result())
 

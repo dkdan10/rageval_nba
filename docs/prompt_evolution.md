@@ -1,9 +1,9 @@
 # Prompt Evolution
 
-This project currently uses `v1` prompts only. The notes below document why each
-prompt exists and what changed during implementation and calibration. Future
-prompt versions should add a new `vN.txt` file and append a short migration note
-here instead of silently rewriting history.
+The notes below document why each prompt exists and what changed during
+implementation and calibration. Future prompt versions should add a new
+`vN.txt` file and append a short migration note here instead of silently
+rewriting history.
 
 ## SQL Agent
 
@@ -14,6 +14,19 @@ here instead of silently rewriting history.
   read-only output, and refusal when a question cannot be answered by the
   database. Safety validation lives in code, but the prompt keeps the model on
   the narrow task.
+- Prompt: `prompts/sql_agent/v2.txt`
+- Evolution note: Live SQL evaluation exposed a mismatch between the v1 prompt
+  and strict SQL-row scoring: generated rows often used aliases such as
+  `player_name`, omitted identifying entity columns, matched accented player
+  names too exactly, or returned NULL-sorted results for unavailable
+  Basketball Reference-only stats. `v2` is now the default SQLAgent prompt. It
+  instructs the model to include `players.full_name AS full_name` and
+  `teams.team_name AS team_name`, preserve `season_id` aliases, use robust
+  prefix/nickname matching for accented names and teams, aggregate
+  regular-season three-point attempts from `player_game_stats`, use table
+  aliases consistently in grouped regular/playoff comparisons, and return a
+  clear placeholder row when a requested stat is unavailable in the nba_api
+  ingestion schema.
 
 ## Router
 

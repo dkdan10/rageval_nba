@@ -11,6 +11,10 @@ cases:
     expected_sql_rows:
       - player_name: "Luka Dončić"
         points_per_game: 33.9
+    live_expected_sql_rows:
+      - full_name: "Joel Embiid"
+        points_per_game: 34.7
+        season_id: "2023-24"
     expected_answer: |
       Luka Dončić led the NBA in scoring during the 2023-24 regular season
       with 33.9 points per game.
@@ -53,6 +57,9 @@ cases:
     expected_sql_rows:
       - team_name: "Boston Celtics"
         defensive_rating: 110.6
+    live_expected_sql_rows:
+      - team_name: "Minnesota Timberwolves"
+        defensive_rating: 108.4
     expected_answer: |
       The Boston Celtics posted the best defensive rating in 2023-24.
 
@@ -273,6 +280,10 @@ cases:
     expected_sql_rows:
       - player_name: "Nikola Jokić"
         metric: true_shooting_pct
+    live_expected_sql_rows:
+      - full_name: "Nikola Jokić"
+        season_id: "2022-23"
+        true_shooting_pct: 0.701
     relevant_doc_ids:
       - thinking-basketball-jokic-offense#2
       - ctg-jokic-passing#0
@@ -290,6 +301,10 @@ cases:
     expected_sql_rows:
       - player_name: "Giannis Antetokounmpo"
         metric: ft_pct
+    live_expected_sql_rows:
+      - full_name: "Giannis Antetokounmpo"
+        season_id: "2021-22"
+        ft_pct: 0.722
     relevant_doc_ids:
       - thinking-basketball-giannis-offense#0
     expected_answer: |
@@ -305,6 +320,10 @@ cases:
     expected_sql_rows:
       - player_name: "Stephen Curry"
         metric: fg3_attempted
+    live_expected_sql_rows:
+      - full_name: "Stephen Curry"
+        season_id: "2023-24"
+        fg3_attempted: 876
     relevant_doc_ids:
       - ctg-curry-shot-selection#0
     expected_answer: |
@@ -321,6 +340,10 @@ cases:
     expected_sql_rows:
       - team_name: "Boston Celtics"
         metric: defensive_rating
+    live_expected_sql_rows:
+      - team_name: "Boston Celtics"
+        season_id: "2023-24"
+        defensive_rating: 110.6
     relevant_doc_ids:
       - ctg-celtics-defense#0
     expected_answer: |
@@ -336,6 +359,10 @@ cases:
     expected_sql_rows:
       - player_name: "Victor Wembanyama"
         metric: blocks_per_game
+    live_expected_sql_rows:
+      - full_name: "Victor Wembanyama"
+        season_id: "2023-24"
+        blocks_per_game: 3.6
     relevant_doc_ids:
       - thinking-basketball-wemby-potential#0
     expected_answer: |
@@ -351,6 +378,10 @@ cases:
     expected_sql_rows:
       - player_name: "Luka Dončić"
         metric: usage_rate
+    live_expected_sql_rows:
+      - full_name: "Luka Dončić"
+        season_id: "2023-24"
+        usage_rate: 0.355
     relevant_doc_ids:
       - ctg-luka-off-ball#0
     expected_answer: |
@@ -366,6 +397,10 @@ cases:
     expected_sql_rows:
       - team_name: "Oklahoma City Thunder"
         metric: pace
+    live_expected_sql_rows:
+      - team_name: "Oklahoma City Thunder"
+        season_id: "2023-24"
+        pace: 100.85
     relevant_doc_ids:
       - thinking-basketball-okc-offense#0
     expected_answer: |
@@ -381,6 +416,8 @@ cases:
     expected_sql_rows:
       - player_name: "Jayson Tatum"
         game_type: playoff
+    live_expected_sql_rows:
+      - game_type: playoff
     relevant_doc_ids:
       - thinking-basketball-tatum-playoffs#0
     expected_answer: |
@@ -396,6 +433,10 @@ cases:
     expected_sql_rows:
       - player_name: "Anthony Davis"
         metric: games_played
+    live_expected_sql_rows:
+      - full_name: "Anthony Davis"
+        season_id: "2023-24"
+        games_played: 76
     relevant_doc_ids:
       - ctg-ad-availability#0
     expected_answer: |
@@ -411,6 +452,10 @@ cases:
     expected_sql_rows:
       - team_name: "Miami Heat"
         metric: wins
+    live_expected_sql_rows:
+      - team_name: "Miami Heat"
+        season_id: "2023-24"
+        wins: 46
     relevant_doc_ids:
       - thinking-basketball-butler-leadership#0
     expected_answer: |
