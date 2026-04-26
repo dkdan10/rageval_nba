@@ -12,6 +12,15 @@ from typing import Any
 
 import click
 from dotenv import load_dotenv
+from rich.console import Console
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 
 import rageval
 from rageval.demo.rag_agent import RAGAgent
@@ -35,9 +44,12 @@ from rageval.metrics.structured import (
 from rageval.reporting import render_html_report
 from rageval.sqlite_vec import load_sqlite_vec
 from rageval.types import (
+    CaseResult,
+    EvaluationResult,
     MetricResult,
     QuestionType,
     RAGResponse,
+    RAGSystem,
     SQLResult,
     TestCase,
     TestSuite,
@@ -280,37 +292,29 @@ def _execute_suite(
     no_cache: bool,
     mode: _RunMode,
 ) -> None:
+    console = _cli_console()
     evaluator = Evaluator(metrics=metrics, max_concurrent=1 if mode == "live" else 5)
-    result = asyncio.run(evaluator.evaluate(_system_for_mode(suite, mode, no_cache), suite))
+
+    if verbose and no_cache:
+        if mode == "live":
+            console.print("--no-cache enabled; live LLM calls bypass the cache.")
+        else:
+            console.print(
+                "--no-cache accepted; deterministic offline path does not use LLM cache."
+            )
+
+    result = asyncio.run(
+        _evaluate_with_progress(
+            evaluator,
+            _system_for_mode(suite, mode, no_cache),
+            suite,
+            console=console,
+            verbose=verbose,
+            mode=mode,
+        )
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(render_html_report(result), encoding="utf-8")
-
-    if verbose:
-        if no_cache:
-            if mode == "live":
-                click.echo("--no-cache enabled; live LLM calls bypass the cache.")
-            else:
-                click.echo(
-                    "--no-cache accepted; deterministic offline path does not use LLM cache."
-                )
-        for case_result in result.case_results:
-            decision = case_result.response.routing_decision
-            route = decision.value if decision is not None else "missing"
-            metric_errors = sum(
-                1 for metric in case_result.metric_results if metric.error is not None
-            )
-            metric_skips = sum(
-                1
-                for metric in case_result.metric_results
-                if metric.details.get("skipped")
-            )
-            click.echo(
-                f"[{case_result.case_id}] route={route} "
-                f"refused={'true' if case_result.response.refused else 'false'} "
-                f"metrics={len(case_result.metric_results)} "
-                f"errors={metric_errors} "
-                f"skipped={metric_skips}"
-            )
 
     click.echo(f"Suite: {result.suite_name}")
     click.echo(f"Mode: {mode}")
@@ -319,6 +323,80 @@ def _execute_suite(
     click.echo(f"Duration: {result.total_duration_seconds:.2f}s")
     if result.total_cost_usd:
         click.echo(f"Total cost: ${result.total_cost_usd:.6f}")
+
+
+async def _evaluate_with_progress(
+    evaluator: Evaluator,
+    system: RAGSystem,
+    suite: TestSuite,
+    *,
+    console: Console,
+    verbose: bool,
+    mode: _RunMode,
+) -> EvaluationResult:
+    show_progress = _should_render_progress(console, mode=mode, verbose=verbose)
+    emit_verbose_lines = verbose
+
+    def on_case_complete(case_result: CaseResult) -> None:
+        if emit_verbose_lines:
+            console.print(_case_progress_line(case_result), highlight=False, markup=False)
+
+    if not show_progress:
+        callback = on_case_complete if emit_verbose_lines else None
+        return await evaluator.evaluate(system, suite, on_case_complete=callback)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        console=console,
+    ) as progress:
+        task_id = progress.add_task("Evaluating cases", total=len(suite.cases))
+
+        def on_case_complete_with_progress(case_result: CaseResult) -> None:
+            progress.advance(task_id)
+            if emit_verbose_lines:
+                progress.console.print(
+                    _case_progress_line(case_result),
+                    highlight=False,
+                    markup=False,
+                )
+
+        return await evaluator.evaluate(
+            system,
+            suite,
+            on_case_complete=on_case_complete_with_progress,
+        )
+
+
+def _cli_console() -> Console:
+    return Console(file=click.get_text_stream("stdout"))
+
+
+def _should_render_progress(console: Console, *, mode: _RunMode, verbose: bool) -> bool:
+    return bool(console.is_terminal and (mode == "live" or verbose))
+
+
+def _case_progress_line(case_result: CaseResult) -> str:
+    decision = case_result.response.routing_decision
+    route = decision.value if decision is not None else "missing"
+    metric_errors = sum(
+        1 for metric in case_result.metric_results if metric.error is not None
+    )
+    metric_skips = sum(
+        1
+        for metric in case_result.metric_results
+        if metric.details.get("skipped")
+    )
+    return (
+        f"[{case_result.case_id}] route={route} "
+        f"refused={'true' if case_result.response.refused else 'false'} "
+        f"metrics={len(case_result.metric_results)} "
+        f"errors={metric_errors} "
+        f"skipped={metric_skips}"
+    )
 
 
 def _select_demo_cases(cases: list[TestCase], target: int) -> list[TestCase]:

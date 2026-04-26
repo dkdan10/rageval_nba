@@ -1,10 +1,12 @@
 """Tests for the minimal CLI stub (src/rageval/cli.py)."""
 
+import io
 import sqlite3
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
+from rich.console import Console
 
 from rageval import cli
 from rageval.cli import main
@@ -122,6 +124,7 @@ cases:
     assert "Suite: tiny-suite" in result.output
     assert "Cases: 1" in result.output
     assert f"Output: {output}" in result.output
+    assert "[case-001]" not in result.output
 
 
 def test_cli_run_metrics_filters_default_metrics(
@@ -697,6 +700,91 @@ cases:
     assert "route=factual" in result.output
     assert "refused=false" in result.output
     assert output.exists()
+
+
+def test_cli_run_verbose_non_tty_uses_plain_case_lines(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    suite_path = tmp_path / "suite.yaml"
+    suite_path.write_text(
+        """
+name: tiny-suite
+cases:
+  - id: case-001
+    question: What are the four factors?
+    question_type: analytical
+    relevant_doc_ids: ["doc-1"]
+""",
+        encoding="utf-8",
+    )
+    output = tmp_path / "report.html"
+    monkeypatch.setattr(cli, "_DB_PATH", _db_with_corpus(tmp_path))
+
+    async def fake_answer(self: HybridRAGSystem, _question: str) -> RAGResponse:
+        return RAGResponse(answer="fake answer", routing_decision=QuestionType.ANALYTICAL)
+
+    monkeypatch.setattr(HybridRAGSystem, "answer", fake_answer)
+
+    result = CliRunner().invoke(
+        main, ["run", str(suite_path), "--output", str(output), "--verbose"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "[case-001] route=analytical" in result.output
+    assert "\r" not in result.output
+    assert "Evaluating cases" not in result.output
+
+
+def test_cli_progress_renders_only_for_tty_live_or_verbose() -> None:
+    tty_console = Console(file=io.StringIO(), force_terminal=True)
+    plain_console = Console(file=io.StringIO(), force_terminal=False)
+
+    assert cli._should_render_progress(tty_console, mode="live", verbose=False)
+    assert cli._should_render_progress(tty_console, mode="offline", verbose=True)
+    assert not cli._should_render_progress(tty_console, mode="offline", verbose=False)
+    assert not cli._should_render_progress(plain_console, mode="live", verbose=False)
+
+
+def test_cli_run_live_non_verbose_non_tty_suppresses_case_lines(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    suite_path = tmp_path / "suite.yaml"
+    suite_path.write_text(
+        """
+name: tiny-suite
+cases:
+  - id: case-001
+    question: What are the four factors?
+    question_type: analytical
+    relevant_doc_ids: ["doc-1"]
+""",
+        encoding="utf-8",
+    )
+    output = tmp_path / "report.html"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "_ensure_demo_data_ready", lambda _db_path: None)
+    monkeypatch.setattr(cli, "_ensure_live_data_ready", lambda _db_path: None)
+
+    class FakeSystem:
+        name = "fake-live"
+
+        async def answer(self, _question: str) -> RAGResponse:
+            return RAGResponse(answer="fake", routing_decision=QuestionType.ANALYTICAL)
+
+    monkeypatch.setattr(cli, "_system_for_mode", lambda *_args: FakeSystem())
+
+    result = CliRunner().invoke(
+        main, ["run", str(suite_path), "--output", str(output), "--live"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Mode: live" in result.output
+    assert "[case-001]" not in result.output
+    assert "\r" not in result.output
+    assert "Evaluating cases" not in result.output
 
 
 def test_cli_demo_runs_representative_subset(

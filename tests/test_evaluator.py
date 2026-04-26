@@ -229,6 +229,33 @@ async def test_empty_metric_list_behavior() -> None:
     assert all(case.metric_results == [] for case in result.case_results)
 
 
+async def test_on_case_complete_callback_runs_once_per_case() -> None:
+    seen: list[str] = []
+
+    result = await Evaluator(metrics=[SyncMetric()]).evaluate(
+        FakeSystem(),
+        _suite(3),
+        on_case_complete=lambda case_result: seen.append(case_result.case_id),
+    )
+
+    assert sorted(seen) == ["case-0", "case-1", "case-2"]
+    assert sorted(case.case_id for case in result.case_results) == sorted(seen)
+
+
+async def test_on_case_complete_callback_runs_for_system_failures() -> None:
+    seen: list[str] = []
+
+    result = await Evaluator(metrics=[SyncMetric()]).evaluate(
+        FailingSystem(),
+        _suite(2),
+        on_case_complete=lambda case_result: seen.append(case_result.case_id),
+    )
+
+    assert sorted(seen) == ["case-0", "case-1"]
+    assert len(result.errors) == 2
+    assert all(case.response.refused for case in result.case_results)
+
+
 def test_max_concurrent_must_be_positive() -> None:
     with pytest.raises(ValueError, match="max_concurrent"):
         Evaluator(metrics=[], max_concurrent=0)

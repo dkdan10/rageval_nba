@@ -34,6 +34,7 @@ _SyncMetric = Callable[
     MetricResult | None | Awaitable[MetricResult | None],
 ]
 _Metric = _AsyncMetric | _SyncMetric
+_CaseCompleteCallback = Callable[[CaseResult], None]
 
 
 class Evaluator:
@@ -50,7 +51,13 @@ class Evaluator:
         self.metrics = list(metrics)
         self.max_concurrent = max_concurrent
 
-    async def evaluate(self, system: RAGSystem, suite: TestSuite) -> EvaluationResult:
+    async def evaluate(
+        self,
+        system: RAGSystem,
+        suite: TestSuite,
+        *,
+        on_case_complete: _CaseCompleteCallback | None = None,
+    ) -> EvaluationResult:
         """Evaluate *system* on every case in *suite*."""
         started = time.perf_counter()
         run_at = datetime.now(UTC)
@@ -59,7 +66,10 @@ class Evaluator:
 
         async def run_case(case: TestCase) -> CaseResult:
             async with semaphore:
-                return await self._evaluate_case(system, case, errors)
+                case_result = await self._evaluate_case(system, case, errors)
+                if on_case_complete is not None:
+                    on_case_complete(case_result)
+                return case_result
 
         case_results = await asyncio.gather(*(run_case(case) for case in suite.cases))
         duration = time.perf_counter() - started
