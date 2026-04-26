@@ -145,7 +145,8 @@ def run_command(
         suite = suite.model_copy(update={"cases": suite.cases[:max_cases]})
 
     mode = _resolve_run_mode(live=live, offline=offline)
-    selected_metrics = _default_metrics(_parse_metric_selection(metrics), mode=mode)
+    selected_metric_names = _parse_metric_selection(metrics)
+    selected_metrics = _default_metrics(selected_metric_names, mode=mode)
     if mode == "live":
         _ensure_live_keys_ready()
     _ensure_demo_data_ready(_DB_PATH)
@@ -156,6 +157,7 @@ def run_command(
         output=output,
         verbose=verbose,
         metrics=selected_metrics,
+        selected_metric_names=selected_metric_names,
         no_cache=no_cache,
         mode=mode,
     )
@@ -236,7 +238,8 @@ def demo_command(
     suite = full_suite.model_copy(update={"cases": selected_cases})
 
     mode = _resolve_run_mode(live=live, offline=offline)
-    selected_metrics = _default_metrics(_parse_metric_selection(metrics), mode=mode)
+    selected_metric_names = _parse_metric_selection(metrics)
+    selected_metrics = _default_metrics(selected_metric_names, mode=mode)
     if mode == "live":
         _ensure_live_keys_ready()
     _ensure_demo_data_ready(_DB_PATH)
@@ -247,6 +250,7 @@ def demo_command(
         output=output,
         verbose=verbose,
         metrics=selected_metrics,
+        selected_metric_names=selected_metric_names,
         no_cache=no_cache,
         mode=mode,
     )
@@ -289,6 +293,7 @@ def _execute_suite(
     output: Path,
     verbose: bool,
     metrics: list[_CliMetric],
+    selected_metric_names: set[str] | None,
     no_cache: bool,
     mode: _RunMode,
 ) -> None:
@@ -313,6 +318,14 @@ def _execute_suite(
             mode=mode,
         )
     )
+    metadata: dict[str, Any] = {
+        **result.metadata,
+        "run_mode": mode,
+        "no_cache": no_cache,
+    }
+    if selected_metric_names is not None:
+        metadata["metrics_selected"] = sorted(selected_metric_names)
+    result = result.model_copy(update={"metadata": metadata})
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(render_html_report(result), encoding="utf-8")
 
@@ -743,6 +756,7 @@ def _ensure_demo_data_ready(db_path: Path) -> None:
 
 
 def _ensure_live_data_ready(db_path: Path) -> None:
+    embedding_count = 0
     try:
         con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         try:

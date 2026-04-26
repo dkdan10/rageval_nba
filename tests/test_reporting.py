@@ -31,7 +31,14 @@ def _fake_result() -> EvaluationResult:
                         Document(
                             id="doc-1",
                             content="Document <em>snippet</em>",
-                            metadata={"title": "Doc Title"},
+                            metadata={
+                                "title": "Doc Title",
+                                "retrieval_mode": "vector",
+                                "score": 0.87654,
+                                "distance": 0.12345,
+                                "embedding_model": "text-embedding-3-small",
+                                "unsafe": "<script>metadata</script>",
+                            },
                         )
                     ],
                     routing_decision=QuestionType.HYBRID,
@@ -56,6 +63,7 @@ def _fake_result() -> EvaluationResult:
         total_cost_usd=0.012345,
         total_duration_seconds=1.5,
         errors=["overall <problem>"],
+        metadata={"run_mode": "live", "no_cache": True},
     )
 
 
@@ -63,6 +71,8 @@ def test_render_html_report_contains_summary_and_case_content() -> None:
     html = render_html_report(_fake_result())
 
     assert "demo-system" in html
+    assert "Live evaluation" in html
+    assert "Cache bypassed" in html
     assert "case-001" in html
     assert "prefix_recall@5" in html
     assert "0.750" in html
@@ -71,6 +81,10 @@ def test_render_html_report_contains_summary_and_case_content() -> None:
     assert "SELECT" in html
     assert "doc-1" in html
     assert "Doc Title" in html
+    assert "vector" in html
+    assert "score 0.877" in html
+    assert "distance 0.123" in html
+    assert "text-embedding-3-small" in html
     assert "1 successful" in html
     assert "1 emitted" in html
     assert "0 skipped of" in html
@@ -162,6 +176,18 @@ def test_render_html_report_escapes_unsafe_html() -> None:
     assert "<em>snippet</em>" not in html
     assert "&lt;em&gt;snippet&lt;/em&gt;" in html
     assert "bad &lt;error&gt;" in html
+    assert "<script>metadata</script>" not in html
+    assert "&lt;script&gt;metadata&lt;/script&gt;" not in html
+
+
+def test_render_html_report_handles_missing_run_metadata() -> None:
+    result = _fake_result().model_copy(update={"metadata": {}})
+
+    html = render_html_report(result)
+
+    assert "Evaluation" in html
+    assert "Live evaluation" not in html
+    assert "Offline evaluation" not in html
 
 
 def test_render_html_report_handles_missing_routing_decision() -> None:

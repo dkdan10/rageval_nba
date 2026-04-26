@@ -111,7 +111,7 @@ def test_test_case_factual_full() -> None:
         question_type=QuestionType.FACTUAL,
         expected_sql_rows=[{"player_name": "Luka Dončić", "points_per_game": 33.9}],
         live_expected_sql_rows=[
-            {"full_name": "Joel Embiid", "points_per_game": 34.7}
+            {"full_name": "Luka Dončić", "points_per_game": 33.9}
         ],
         expected_numeric=33.9,
         numeric_tolerance=0.05,
@@ -121,7 +121,7 @@ def test_test_case_factual_full() -> None:
     assert case.expected_sql_rows is not None
     assert case.expected_sql_rows[0]["player_name"] == "Luka Dončić"
     assert case.live_expected_sql_rows is not None
-    assert case.live_expected_sql_rows[0]["full_name"] == "Joel Embiid"
+    assert case.live_expected_sql_rows[0]["full_name"] == "Luka Dončić"
 
 
 def test_test_case_live_expected_sql_rows_optional() -> None:
@@ -271,8 +271,8 @@ cases:
       - player_name: Luka Dončić
         points_per_game: 33.9
     live_expected_sql_rows:
-      - full_name: Joel Embiid
-        points_per_game: 34.7
+      - full_name: Luka Dončić
+        points_per_game: 33.9
 """,
         encoding="utf-8",
     )
@@ -284,7 +284,7 @@ cases:
         {"player_name": "Luka Dončić", "points_per_game": 33.9}
     ]
     assert case.live_expected_sql_rows == [
-        {"full_name": "Joel Embiid", "points_per_game": 34.7}
+        {"full_name": "Luka Dončić", "points_per_game": 33.9}
     ]
 
 
@@ -313,6 +313,20 @@ def test_from_yaml_examples_file() -> None:
     suite = TestSuite.from_yaml("examples/nba_test_suite.yaml")
     assert suite.name == "nba-hybrid-demo"
     assert len(suite.cases) > 0
+
+
+def test_examples_factual_001_live_sql_uses_qualified_scoring_leader() -> None:
+    suite = TestSuite.from_yaml("examples/nba_test_suite.yaml")
+    case = next(c for c in suite.cases if c.id == "factual-001")
+
+    assert case.live_expected_sql_rows == [
+        {
+            "full_name": "Luka Dončić",
+            "points_per_game": 33.9,
+            "season_id": "2023-24",
+        }
+    ]
+    assert "games_played >= 58" in case.metadata["live_sql_note"]
 
 
 def test_from_yaml_inline_valid(tmp_path: Path) -> None:
@@ -497,7 +511,26 @@ def test_evaluation_result_basic() -> None:
     )
     assert er.suite_name == "my-suite"
     assert er.errors == []
+    assert er.metadata == {}
     assert er.aggregate_scores["precision_at_5"] == 1.0
+
+
+def test_evaluation_result_metadata_roundtrip() -> None:
+    now = datetime.now(tz=UTC)
+    er = EvaluationResult(
+        suite_name="my-suite",
+        system_name="demo-v1",
+        run_at=now,
+        case_results=[_make_case_result()],
+        aggregate_scores={"precision_at_5": 1.0},
+        total_cost_usd=0.012,
+        total_duration_seconds=8.4,
+        metadata={"run_mode": "live", "no_cache": True},
+    )
+
+    restored = EvaluationResult.model_validate(er.model_dump())
+
+    assert restored.metadata == {"run_mode": "live", "no_cache": True}
 
 
 def test_evaluation_result_with_errors() -> None:

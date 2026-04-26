@@ -14,7 +14,7 @@ from rageval.llm_client import LLMClient
 from rageval.types import SQLResult
 
 _DB_PATH = Path(__file__).parents[3] / "data" / "nba.db"
-_PROMPT_PATH = Path(__file__).parents[3] / "prompts" / "sql_agent" / "v2.txt"
+_PROMPT_PATH = Path(__file__).parents[3] / "prompts" / "sql_agent" / "v3.txt"
 _MODEL = "claude-haiku-4-5-20251001"
 _TOOL_NAME = "run_sql"
 _MAX_ROWS = 500
@@ -69,7 +69,7 @@ def _validate_sql(sql: str) -> str | None:
     # Reject semicolon-chained multi-statements. A trailing semicolon is ok,
     # but no statement content may follow it.
     decommented = _strip_sql_comments(stripped).strip()
-    if ";" in decommented.rstrip(";") and decommented.rstrip(";").count(";") > 0:
+    if ";" in decommented.rstrip(";"):
         return "Generated SQL contains multiple statements (';' not allowed)"
 
     # Detect forbidden keywords even when hidden by comments: check the

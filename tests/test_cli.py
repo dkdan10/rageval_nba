@@ -4,6 +4,7 @@ import io
 import sqlite3
 from pathlib import Path
 
+import click
 import pytest
 from click.testing import CliRunner
 from rich.console import Console
@@ -120,7 +121,9 @@ cases:
     result = CliRunner().invoke(main, ["run", str(suite_path), "--output", str(output)])
 
     assert result.exit_code == 0, result.output
-    assert "tiny-suite" in output.read_text(encoding="utf-8")
+    html = output.read_text(encoding="utf-8")
+    assert "tiny-suite" in html
+    assert "Offline evaluation" in html
     assert "Suite: tiny-suite" in result.output
     assert "Cases: 1" in result.output
     assert f"Output: {output}" in result.output
@@ -162,6 +165,7 @@ cases:
     assert result.exit_code == 0, result.output
     html = output.read_text(encoding="utf-8")
     assert "refusal" in html
+    assert "Metrics: refusal" in html
     assert "prefix_recall@5" not in html
 
 
@@ -268,6 +272,7 @@ def test_cli_run_no_cache_is_accepted_and_verbose_notes_deterministic_path(
 
     assert result.exit_code == 0, result.output
     assert "deterministic offline path does not use LLM cache" in result.output
+    assert "Cache bypassed" in output.read_text(encoding="utf-8")
     assert output.exists()
 
 
@@ -310,6 +315,38 @@ def test_cli_run_explicit_live_requires_keys(
     assert "API_KEY" in result.output
 
 
+def test_ensure_live_data_ready_reports_missing_embeddings_table(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = _db_with_corpus(tmp_path)
+    monkeypatch.setattr(cli, "load_sqlite_vec", lambda _con: (True, None))
+
+    with pytest.raises(click.ClickException) as exc_info:
+        cli._ensure_live_data_ready(db_path)
+
+    assert "requires chunk_embeddings" in str(exc_info.value)
+
+
+def test_ensure_live_data_ready_reports_empty_embeddings_table(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "nba.db"
+    con = sqlite3.connect(db_path)
+    try:
+        con.execute("CREATE TABLE chunk_embeddings(chunk_id TEXT PRIMARY KEY)")
+        con.commit()
+    finally:
+        con.close()
+    monkeypatch.setattr(cli, "load_sqlite_vec", lambda _con: (True, None))
+
+    with pytest.raises(click.ClickException) as exc_info:
+        cli._ensure_live_data_ready(db_path)
+
+    assert "populated chunk_embeddings" in str(exc_info.value)
+
+
 def test_cli_run_defaults_to_live_when_required_keys_are_present(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -346,6 +383,7 @@ def test_cli_run_defaults_to_live_when_required_keys_are_present(
     assert result.exit_code == 0, result.output
     assert captured["mode"] == "live"
     assert "Mode: live" in result.output
+    assert "Live evaluation" in output.read_text(encoding="utf-8")
 
 
 def test_cli_run_explicit_offline_overrides_keys(
@@ -744,6 +782,26 @@ def test_cli_progress_renders_only_for_tty_live_or_verbose() -> None:
     assert cli._should_render_progress(tty_console, mode="offline", verbose=True)
     assert not cli._should_render_progress(tty_console, mode="offline", verbose=False)
     assert not cli._should_render_progress(plain_console, mode="live", verbose=False)
+
+
+@pytest.mark.asyncio
+async def test_demo_sql_covers_suite_cases_that_require_sql(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli, "_DB_PATH", _db_with_corpus(tmp_path))
+    suite = TestSuite.from_yaml("examples/nba_test_suite.yaml")
+    sql_agent = cli._DemoSQLAgent()
+
+    missing_branches: list[str] = []
+    for case in suite.cases:
+        if case.question_type not in {QuestionType.FACTUAL, QuestionType.HYBRID}:
+            continue
+        result = await sql_agent.generate_and_execute(case.question)
+        if result.error == "No deterministic demo SQL for question":
+            missing_branches.append(case.id)
+
+    assert missing_branches == []
 
 
 def test_cli_run_live_non_verbose_non_tty_suppresses_case_lines(

@@ -19,22 +19,27 @@ offense?" needs both. A useful evaluator has to measure routing, retrieval,
 structured correctness, answer quality, and refusal behavior separately.
 
 This project provides that end-to-end loop in a small NBA domain. The default
-demo is deterministic and offline after setup: it builds a seed SQLite database,
-loads a curated corpus manifest into `article_chunks`, runs the reference
-`HybridRAGSystem`, and writes a screenshot-worthy HTML report.
+setup command builds a seed SQLite database, then the deterministic offline demo
+uses whichever database currently exists at `data/nba.db`, loads a curated
+corpus manifest into `article_chunks`, runs the reference `HybridRAGSystem`, and
+writes a screenshot-worthy HTML report.
 
 The optional live path uses cached real NBA API payloads, sqlite-vec-backed
 article retrieval, and Anthropic-backed routing/SQL/synthesis. It is only used
 when the required API keys and local vector embeddings are available.
 
-Latest live run, 2026-04-26: `rageval run examples/nba_test_suite.yaml --live
---verbose --no-cache` completed 42 cases in 231.01s with $0.197102 Anthropic
+Last recorded live run, 2026-04-26 (historical, not guaranteed on future model,
+cache, or data changes): `rageval run examples/nba_test_suite.yaml --live
+--verbose --no-cache` completed 42 cases in 206.00s with $0.200850 Anthropic
 LLM cost, 0 overall errors, and 0 metric errors. Retrieval reached
-`prefix_recall@5 = 0.780`, `prefix_ndcg@5 = 0.682`, and
-`prefix_reciprocal_rank = 0.665`; refusal scored `1.000`. Live SQL equivalence
-scored 12/12 = `1.000`, with 2 explicit skips for Basketball Reference-only
-stats that are unavailable in the cached nba_api ingestion. Numeric tolerance
-scored `0.625`.
+`prefix_recall@5 = 0.820`, `prefix_ndcg@5 = 0.698`, and
+`prefix_reciprocal_rank = 0.673`; refusal scored `1.000`. Live SQL equivalence
+used mode-specific real-DB expectations and scored 10/12 = `0.833`; the report
+also records skipped/not-applicable SQL cases, including explicit skips for
+Basketball Reference-only stats unavailable in the cached nba_api ingestion.
+Leader questions encode project qualification rules, including
+`games_played >= 58` for 2023-24 points-per-game/scoring-title leaderboards.
+Numeric tolerance scored `0.625`.
 
 ## Quickstart
 
@@ -42,8 +47,8 @@ scored `0.625`.
 uv sync
 uv run python scripts/build_stats_db.py
 uv run python scripts/build_corpus.py --from-cache
-uv run rageval demo --output demo-report.html
-uv run rageval run examples/nba_test_suite.yaml --output report.html
+uv run rageval demo --output demo-report.html --offline
+uv run rageval run examples/nba_test_suite.yaml --output report.html --offline
 ```
 
 Open `demo-report.html` for a 5-case smoke report or `report.html` for the full
@@ -73,11 +78,11 @@ uv run python scripts/build_corpus.py --from-cache
 ## CLI
 
 ```bash
-# Fast feedback: one representative sample per route/category.
-uv run rageval demo --output demo-report.html --verbose
+# Fast deterministic feedback: one representative sample per route/category.
+uv run rageval demo --output demo-report.html --offline --verbose
 
-# Full NBA suite.
-uv run rageval run examples/nba_test_suite.yaml --output report.html
+# Full deterministic NBA suite.
+uv run rageval run examples/nba_test_suite.yaml --output report.html --offline
 
 # Force deterministic offline mode.
 uv run rageval run examples/nba_test_suite.yaml --output report.html --offline
@@ -123,6 +128,12 @@ calibration.
 Skipped metric cells in the report are not failures; they mean the metric is not
 applicable for that case.
 
+Live `sql_equivalence` uses mode-specific `live_expected_sql_rows` because the
+real cached nba_api database does not always match the deterministic seed/demo
+fixtures. Stats that are not present in nba_api, such as some Basketball
+Reference-only advanced metrics, are skipped instead of scored against
+placeholder offline expectations.
+
 ## Architecture
 
 ```mermaid
@@ -146,6 +157,8 @@ Live judge calibration was recorded on 2026-04-26 with
 [`docs/judge_calibration.md`](docs/judge_calibration.md) for method details,
 fixtures, prompt notes, and correctness position-swap evidence. Prompt-history
 notes live in [`docs/prompt_evolution.md`](docs/prompt_evolution.md).
+Each judge fixture currently has `n=10` examples, which is enough for smoke
+calibration but not a tight statistical estimate.
 
 | Judge | Agreement | Threshold | Status |
 | --- | ---: | ---: | --- |
@@ -172,7 +185,9 @@ must be calibrated, measured, and treated as a signal rather than an oracle.
 
 The tracked corpus source list is `examples/corpus/articles.json`. It contains
 metadata, source URLs, topics, storage policies, and short repo-authored
-summaries where needed. Raw fetched pages are intentionally not tracked:
+summaries where needed. Many records are metadata/URL-only; repo-authored
+summaries are tracked only where redistribution is safer than committing
+copyrighted article text. Raw fetched pages are intentionally not tracked:
 `scripts/build_corpus.py --fetch` writes them under the gitignored
 `data/raw/corpus/` cache, and `--from-cache` builds local SQLite rows.
 

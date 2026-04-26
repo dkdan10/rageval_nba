@@ -145,3 +145,4 @@ class EvaluationResult(BaseModel):
     total_cost_usd: float
     total_duration_seconds: float
     errors: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)

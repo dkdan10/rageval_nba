@@ -27,6 +27,15 @@ rewriting history.
   aliases consistently in grouped regular/playoff comparisons, and return a
   clear placeholder row when a requested stat is unavailable in the nba_api
   ingestion schema.
+- Prompt: `prompts/sql_agent/v3.txt`
+- Evolution note: An audit found that live scoring-leader evaluation had become
+  tautological: the expected row accepted the raw points-per-game leader from
+  the cached nba_api data instead of the NBA scoring-title leader. `v3` is now
+  the default SQLAgent prompt. It keeps the v2 aliasing and schema guidance and
+  adds league-leader qualification rules, including the project v0.1 convention
+  that points-per-game/scoring-title leaderboards require
+  `player_season_stats.games_played >= 58` unless the user explicitly asks for
+  raw unqualified leaders.
 
 ## Router
 

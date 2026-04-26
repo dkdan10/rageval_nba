@@ -85,6 +85,7 @@ def render_html_report(result: EvaluationResult) -> str:
     env.filters["route_display_label"] = _route_display_label
     env.filters["score_class"] = _score_class
     env.filters["score_word"] = _score_word
+    env.filters["run_mode_label"] = _run_mode_label
     template = env.get_template(_TEMPLATE_NAME)
     summaries = _metric_summaries(result)
     diagnostics = _diagnostics(result)
@@ -105,6 +106,7 @@ def render_html_report(result: EvaluationResult) -> str:
         notable_findings=_notable_findings(failures),
         finding_cards=_finding_cards(failures, diagnostics),
         case_index_rows=_case_index_rows(result),
+        run_metadata=_run_metadata(result),
     )
 
 
@@ -781,6 +783,18 @@ def _coverage_data(summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _run_metadata(result: EvaluationResult) -> dict[str, Any]:
+    run_mode = result.metadata.get("run_mode")
+    no_cache = result.metadata.get("no_cache")
+    metrics_selected = result.metadata.get("metrics_selected")
+    return {
+        "run_mode": run_mode if isinstance(run_mode, str) else None,
+        "run_mode_label": _run_mode_label(run_mode),
+        "no_cache": no_cache if isinstance(no_cache, bool) else None,
+        "metrics_selected": metrics_selected if isinstance(metrics_selected, list) else None,
+    }
+
+
 def _json_pretty(value: Any) -> str:
     return json.dumps(value, indent=2, sort_keys=True, default=str)
 
@@ -820,6 +834,14 @@ def _route_label(value: Any) -> str:
 
 def _route_display_label(value: Any) -> str:
     return _ROUTE_DISPLAY_LABELS.get(_route_key(value), "Missing")
+
+
+def _run_mode_label(value: Any) -> str:
+    if value == "live":
+        return "Live evaluation"
+    if value == "offline":
+        return "Offline evaluation"
+    return "Evaluation"
 
 
 def _score_class(value: float | None) -> str:

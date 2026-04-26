@@ -11,6 +11,12 @@ cases:
     expected_sql_rows:
       - player_name: "Luka Dončić"
         points_per_game: 33.9
+    live_expected_sql_rows:
+      - full_name: "Luka Dončić"
+        points_per_game: 33.9
+        season_id: "2023-24"
+    metadata:
+      live_sql_note: "League-leader queries use the project v0.1 qualification convention: games_played >= 58 for the 2023-24 scoring title."
     expected_answer: |
       Luka Dončić led the NBA in scoring during the 2023-24 regular season
       with 33.9 points per game.

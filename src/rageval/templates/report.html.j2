@@ -231,6 +231,18 @@
       .pill.ok { color: #16713c; background: #eef9f1; border-color: #bde6c8; }
       .pill.warn { color: #a45e00; background: #fff7e8; border-color: #f2cf91; }
       .pill.err { color: #b42318; background: #fff1f1; border-color: #f2b8b8; }
+      .run-meta {
+        display: flex;
+        gap: 0.45rem;
+        flex-wrap: wrap;
+        margin-top: 0.55rem;
+      }
+      .evidence-meta {
+        display: flex;
+        gap: 0.35rem;
+        flex-wrap: wrap;
+        margin-top: 0.25rem;
+      }
       .case-toolbar {
         display: flex;
         gap: 0.75rem;
@@ -327,9 +339,20 @@
         <div>
           <h1>{{ result.suite_name }} Report</h1>
           <p class="subtitle">
-            {{ result.system_name }} · {{ diagnostics.total_cases }} cases ·
+            {{ run_metadata.run_mode_label }} · {{ result.system_name }} · {{ diagnostics.total_cases }} cases ·
             {{ result.run_at.date().isoformat() }}
           </p>
+          <div class="run-meta" aria-label="Run metadata">
+            <span class="pill">{{ run_metadata.run_mode_label }}</span>
+            {% if run_metadata.no_cache is not none %}
+              <span class="pill {% if run_metadata.no_cache %}warn{% else %}ok{% endif %}">
+                Cache {% if run_metadata.no_cache %}bypassed{% else %}enabled{% endif %}
+              </span>
+            {% endif %}
+            {% if run_metadata.metrics_selected %}
+              <span class="pill">Metrics: {{ run_metadata.metrics_selected|join(", ") }}</span>
+            {% endif %}
+          </div>
         </div>
         <div class="status-strip">
           <div class="status-card">
@@ -640,6 +663,20 @@
                         <li>
                           <strong>{{ doc.metadata.title|default(doc.id) }}</strong><br>
                           <span class="muted">{{ doc.content|short(120) }}</span>
+                          <div class="evidence-meta">
+                            {% if doc.metadata.retrieval_mode %}
+                              <span class="pill">{{ doc.metadata.retrieval_mode }}</span>
+                            {% endif %}
+                            {% if doc.metadata.score is number %}
+                              <span class="pill">score {{ "%.3f"|format(doc.metadata.score) }}</span>
+                            {% endif %}
+                            {% if doc.metadata.distance is number %}
+                              <span class="pill">distance {{ "%.3f"|format(doc.metadata.distance) }}</span>
+                            {% endif %}
+                            {% if doc.metadata.embedding_model %}
+                              <span class="pill">{{ doc.metadata.embedding_model }}</span>
+                            {% endif %}
+                          </div>
                         </li>
                       {% endfor %}
                     </ol>
