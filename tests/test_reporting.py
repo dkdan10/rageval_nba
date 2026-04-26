@@ -72,18 +72,14 @@ def test_render_html_report_contains_summary_and_case_content() -> None:
     assert "doc-1" in html
     assert "Doc Title" in html
     assert "1 successful" in html
-    assert "0 successful" in html
     assert "1 emitted" in html
     assert "0 skipped of" in html
-    assert "Run Diagnostics" in html
-    assert "Total Cases" in html
-    assert "Refused Cases" in html
-    assert "Cases With SQL" in html
-    assert "Cases With Retrieved Docs" in html
+    assert "Executive Summary" in html
+    assert "Cases" in html
+    assert "SQL Evidence" in html
+    assert "Retrieved Evidence" in html
     assert "Metric Errors" in html
-    assert "Routing" in html
-    assert "hybrid" in html
-    assert "Hybrid Routes" in html
+    assert "Hybrid (SQL + RAG)" in html
     assert "Unanswerable / Adversarial" in html
     assert "CDNs" in html
 
@@ -91,26 +87,26 @@ def test_render_html_report_contains_summary_and_case_content() -> None:
 def test_render_html_report_includes_intro_and_metric_descriptions() -> None:
     html = render_html_report(_fake_result())
 
-    assert "What This Report Shows" in html
+    assert "Retrieval" in html
+    assert "SQL / Structured" in html
+    assert "Refusal" in html
+    assert "Coverage" in html
+    assert "Case Browser" in html
+    assert "Metric Results" in html
+    assert "1 cases completed in 1.50s" in html
     # Coverage / skipped explanation appears in the intro
-    assert "Skipped cases are <em>not failures</em>" in html
+    assert "Skipped cases are not failures" in html
     # Metric descriptions appear for known metrics
-    assert (
-        "Of the relevant articles, the fraction reached by at least one"
-        in html
-    )
-    assert "stable article IDs" in html
+    assert "Prefix retrieval metrics evaluate article-level IDs" in html
     # Notes / footer details appear
-    assert "Notes" in html
-    assert "lexical search" in html
+    assert "Methodology Notes" in html
 
 
 def test_render_html_report_renders_route_badges_and_charts() -> None:
     html = render_html_report(_fake_result())
 
     # Route badge appears for the hybrid case
-    assert "badge-route-hybrid" in html
-    assert "Hybrid" in html
+    assert "Hybrid (SQL + RAG)" in html
     # Chart payload data is embedded for client-side rendering
     assert "rageval-route-data" in html
     assert "rageval-metric-data" in html
@@ -152,9 +148,8 @@ def test_render_html_report_renders_explicit_metric_skips() -> None:
     html = render_html_report(result)
 
     assert "skipped" in html
-    assert "explicit skip(s)" in html
     assert "live_expected_sql_rows is not set" in html
-    assert "metric_skipped" in html
+    assert "Explicit skips" in html
 
 
 def test_render_html_report_escapes_unsafe_html() -> None:
@@ -189,7 +184,6 @@ def test_render_html_report_handles_missing_routing_decision() -> None:
 
     html = render_html_report(result)
 
-    assert "badge-route-missing" in html
     assert "Missing" in html
 
 
@@ -255,15 +249,15 @@ def _multi_category_result() -> EvaluationResult:
 def test_render_html_report_renders_per_category_breakdown() -> None:
     html = render_html_report(_multi_category_result())
 
-    assert "Per-Category Breakdown" in html
+    assert "Per-Category Metric Heatmap" in html
     assert "Factual" in html
     assert "Analytical" in html
     # Factual numeric_tolerance mean = (1.0 + 0.0) / 2 = 0.500
     assert "0.500" in html
     # Analytical prefix_recall mean = 1.000 (n=1)
-    assert "n=1" in html
+    assert "n = 1" in html
     # Skipped/inapplicable cells render an em dash
-    assert "&mdash;" in html
+    assert "—" in html
 
 
 def test_render_html_report_uses_adversarial_unanswerable_label() -> None:
@@ -299,7 +293,7 @@ def test_render_html_report_uses_adversarial_unanswerable_label() -> None:
 def test_render_html_report_failure_modes_panel_lists_zero_score() -> None:
     html = render_html_report(_multi_category_result())
 
-    assert "Highlighted Failure Modes" in html
+    assert "Notable Findings" in html
     # Factual case f2 had numeric_tolerance=0.0
     assert "f2" in html
     assert "Zero score" in html
@@ -308,7 +302,7 @@ def test_render_html_report_failure_modes_panel_lists_zero_score() -> None:
 def test_render_html_report_failure_modes_panel_lists_metric_error() -> None:
     html = render_html_report(_fake_result())
 
-    assert "Highlighted Failure Modes" in html
+    assert "Notable Findings" in html
     assert "Metric error" in html
     assert "case-001" in html
 
@@ -376,4 +370,4 @@ def test_render_html_report_failure_modes_panel_empty_state() -> None:
 
     html = render_html_report(result)
 
-    assert "No highlighted failure modes." in html
+    assert "No highlighted findings." in html
