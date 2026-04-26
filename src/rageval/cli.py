@@ -108,8 +108,8 @@ def run_command(
             raise click.BadParameter("--max-cases must be greater than zero")
         suite = suite.model_copy(update={"cases": suite.cases[:max_cases]})
 
-    _ensure_demo_data_ready(_DB_PATH)
     selected_metrics = _default_metrics(_parse_metric_selection(metrics))
+    _ensure_demo_data_ready(_DB_PATH)
     _execute_suite(
         suite,
         output=output,
@@ -161,8 +161,8 @@ def demo_command(output: Path, verbose: bool, metrics: tuple[str, ...], no_cache
         raise click.ClickException("Demo suite contains no cases.")
     suite = full_suite.model_copy(update={"cases": selected_cases})
 
-    _ensure_demo_data_ready(_DB_PATH)
     selected_metrics = _default_metrics(_parse_metric_selection(metrics))
+    _ensure_demo_data_ready(_DB_PATH)
     _execute_suite(
         suite,
         output=output,
