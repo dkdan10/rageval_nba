@@ -23,6 +23,19 @@ demo is deterministic and offline after setup: it builds a seed SQLite database,
 loads a curated corpus manifest into `article_chunks`, runs the reference
 `HybridRAGSystem`, and writes a screenshot-worthy HTML report.
 
+The optional live path uses cached real NBA API payloads, sqlite-vec-backed
+article retrieval, and Anthropic-backed routing/SQL/synthesis. It is only used
+when the required API keys and local vector embeddings are available.
+
+Latest live run, 2026-04-26: `rageval run examples/nba_test_suite.yaml --live
+--verbose --no-cache` completed 42 cases in 203.53s with $2.945970 Anthropic
+LLM cost, 0 overall errors, and 0 metric errors. Retrieval reached
+`prefix_recall@5 = 0.780`, `prefix_ndcg@5 = 0.682`, and
+`prefix_reciprocal_rank = 0.665`; refusal scored `1.000`. Structured SQL scores
+remain weak in live mode (`sql_equivalence = 0.000`, `numeric_tolerance = 0.500`),
+which is the clearest current improvement area for the live SQL prompt/schema
+alignment.
+
 ## Quickstart
 
 ```bash
@@ -66,6 +79,15 @@ uv run rageval demo --output demo-report.html --verbose
 # Full NBA suite.
 uv run rageval run examples/nba_test_suite.yaml --output report.html
 
+# Force deterministic offline mode.
+uv run rageval run examples/nba_test_suite.yaml --output report.html --offline
+
+# Live mode: requires ANTHROPIC_API_KEY, OPENAI_API_KEY, real stats, and embeddings.
+uv run python scripts/build_stats_db.py --mode real --resume-raw
+uv run python scripts/build_corpus.py --from-cache
+uv run python scripts/build_corpus.py --embed
+uv run rageval run examples/nba_test_suite.yaml --output report.html --live --verbose
+
 # Run a deterministic metric subset.
 uv run rageval run examples/nba_test_suite.yaml \
   --output report.html \
@@ -76,8 +98,11 @@ uv run rageval calibrate routing --threshold 0.8
 ```
 
 `rageval run` also supports `--max-cases`, repeated `--metrics`, `--verbose`,
-and `--no-cache`. The default CLI path avoids live LLM calls. `--no-cache` is
-accepted for plan parity and matters when running LLM-backed calibration.
+`--offline`, `--live`, and `--no-cache`. If both `ANTHROPIC_API_KEY` and
+`OPENAI_API_KEY` are present, the CLI defaults to live mode; otherwise it uses
+the deterministic offline path. `--offline` always forces the fixture-backed
+path. `--no-cache` bypasses the Anthropic cache for live LLM calls and
+calibration.
 
 ## Metrics Explained
 
@@ -116,7 +141,7 @@ flowchart LR
 
 ## Calibration Results
 
-Live judge calibration was recorded on 2026-04-25 with
+Live judge calibration was recorded on 2026-04-26 with
 `claude-haiku-4-5-20251001`. See
 [`docs/judge_calibration.md`](docs/judge_calibration.md) for method details,
 fixtures, prompt notes, and correctness position-swap evidence. Prompt-history
@@ -151,6 +176,14 @@ summaries where needed. Raw fetched pages are intentionally not tracked:
 `scripts/build_corpus.py --fetch` writes them under the gitignored
 `data/raw/corpus/` cache, and `--from-cache` builds local SQLite rows.
 
+Vector retrieval uses `text-embedding-3-small` at 1024 dimensions so embeddings
+fit the existing sqlite-vec `chunk_embeddings` schema. The model was chosen
+because it is inexpensive for a small corpus, supports custom dimensions, and
+can be called with the existing `httpx` dependency. Before making embedding API
+calls, `scripts/build_corpus.py --embed` estimates cost and aborts if it exceeds
+the default `$1` ceiling. Without `OPENAI_API_KEY` or sqlite-vec, the project
+keeps using deterministic lexical retrieval.
+
 Real NBA API ingestion is available, but the default demo uses seed mode to
 avoid timeouts and rate limits:
 
@@ -162,16 +195,17 @@ uv run python scripts/build_stats_db.py --mode real --resume-raw \
 Live Anthropic-backed judge calibration requires `ANTHROPIC_API_KEY`. The
 deterministic routing judge does not.
 
-## Package Readiness
+## Local Package Readiness
 
 The package exposes the `rageval` console script and includes the Jinja report
 template plus a bundled demo suite resource so `rageval demo` does not depend on
-a repo-root `examples/` directory. The project is prepared for `uv build`; actual
-publishing requires a PyPI token and should be done from a clean release state.
+a repo-root `examples/` directory. The project is intended to run from a cloned
+repo with `uv sync`; `uv build` is used as a local packaging sanity check to
+verify templates and bundled demo resources are included correctly.
 
 ## Roadmap
 
-- Publish `v0.1.0` to PyPI after release token setup.
+- Tag `v0.1.0` and attach local build artifacts to a GitHub release if desired.
 - Record a 90-second demo video scrolling through the report.
 - Add optional vector retrieval when embeddings/sqlite-vec are available.
 - Add hosted sample report or GitHub Pages preview.

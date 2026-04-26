@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 from scripts import build_corpus
-from scripts.build_corpus import CorpusArticle, _cache_path, ingest_manifest
+from scripts.build_corpus import CorpusArticle, _cache_path, embed_chunks, ingest_manifest
 
 
 def _article(**overrides: object) -> dict[str, object]:
@@ -174,6 +174,104 @@ def test_ingest_manifest_from_cache_preserves_repo_authored_summary(
         assert "Zone defense can protect weak defenders." in content
     finally:
         con.close()
+
+
+def test_embed_chunks_populates_chunk_embeddings_with_fake_client(tmp_path: Path) -> None:
+    pytest.importorskip("sqlite_vec")
+    manifest = tmp_path / "articles.json"
+    _write_manifest(
+        manifest,
+        [
+            _article(
+                full_text=(
+                    "Effective field goal percentage matters. "
+                    "Turnover rate matters."
+                )
+            )
+        ],
+    )
+    db_path = tmp_path / "nba.db"
+    ingest_manifest(manifest, db_path=db_path, max_tokens=50)
+
+    class FakeEmbeddingClient:
+        provider = "fake"
+        model = "fake-embedding"
+        dimensions = 1024
+
+        def embed_texts(self, texts: list[str]) -> list[list[float]]:
+            assert texts == [
+                "Effective field goal percentage matters. Turnover rate matters."
+            ]
+            return [[1.0] + [0.0] * 1023]
+
+        def embed_query(self, text: str) -> list[float]:
+            return self.embed_texts([text])[0]
+
+    counts = embed_chunks(
+        db_path=db_path,
+        embedding_client=FakeEmbeddingClient(),
+        batch_size=8,
+    )
+
+    assert counts["article_chunks"] == 1
+    assert counts["embedded"] == 1
+    assert counts["chunk_embeddings"] == 1
+    assert counts["model"] == "text-embedding-3-small"
+
+
+def test_embed_chunks_skips_existing_embeddings(tmp_path: Path) -> None:
+    pytest.importorskip("sqlite_vec")
+    manifest = tmp_path / "articles.json"
+    _write_manifest(manifest, [_article(full_text="One useful chunk.")])
+    db_path = tmp_path / "nba.db"
+    ingest_manifest(manifest, db_path=db_path)
+
+    class FakeEmbeddingClient:
+        provider = "fake"
+        model = "fake-embedding"
+        dimensions = 1024
+        calls = 0
+
+        def embed_texts(self, texts: list[str]) -> list[list[float]]:
+            self.calls += 1
+            return [[1.0] + [0.0] * 1023 for _ in texts]
+
+        def embed_query(self, text: str) -> list[float]:
+            return self.embed_texts([text])[0]
+
+    client = FakeEmbeddingClient()
+    first = embed_chunks(db_path=db_path, embedding_client=client)
+    second = embed_chunks(db_path=db_path, embedding_client=client)
+
+    assert first["embedded"] == 1
+    assert second["embedded"] == 0
+    assert second["skipped_existing"] == 1
+    assert client.calls == 1
+
+
+def test_embed_chunks_enforces_cost_ceiling_before_api_calls(tmp_path: Path) -> None:
+    manifest = tmp_path / "articles.json"
+    _write_manifest(manifest, [_article(full_text="word " * 1000)])
+    db_path = tmp_path / "nba.db"
+    ingest_manifest(manifest, db_path=db_path, max_tokens=1000)
+
+    class FailingEmbeddingClient:
+        provider = "fake"
+        model = "fake-embedding"
+        dimensions = 1024
+
+        def embed_texts(self, texts: list[str]) -> list[list[float]]:
+            raise AssertionError("embedding API should not be called")
+
+        def embed_query(self, text: str) -> list[float]:
+            raise AssertionError("embedding API should not be called")
+
+    with pytest.raises(RuntimeError, match="Estimated embedding cost"):
+        embed_chunks(
+            db_path=db_path,
+            embedding_client=FailingEmbeddingClient(),
+            cost_ceiling_usd=0.0,
+        )
 
 
 @pytest.mark.parametrize(

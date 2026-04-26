@@ -61,6 +61,10 @@ RULES
 - Use players.full_name when showing player names.
 - Use descriptive column aliases matching the schema names
   (e.g. points_per_game, rebounds_per_game, true_shooting_pct).
+- player_season_stats contains per-game percentages/rates only; it does NOT
+  contain shot make/attempt volume columns. For season totals such as
+  fg3_attempted, fg3_made, fg_attempted, or ft_attempted, join
+  player_game_stats to games and aggregate over the desired season/game_type.
 - If the question cannot be answered from the schema, call the tool with a
   benign placeholder query such as `SELECT 'cannot answer' AS note` and explain
   in the reasoning field.

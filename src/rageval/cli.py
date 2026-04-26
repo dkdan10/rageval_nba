@@ -2,6 +2,7 @@
 
 import asyncio
 import importlib.util
+import os
 import sqlite3
 from collections.abc import Callable
 from importlib import resources
@@ -14,8 +15,12 @@ from dotenv import load_dotenv
 
 import rageval
 from rageval.demo.rag_agent import RAGAgent
+from rageval.demo.router import Router
+from rageval.demo.sql_agent import SQLAgent
+from rageval.demo.synthesizer import Synthesizer
 from rageval.demo.system import HybridRAGSystem
 from rageval.evaluator import Evaluator
+from rageval.llm_client import LLMClient
 from rageval.metrics.retrieval import (
     ndcg_at_k,
     precision_at_k,
@@ -28,6 +33,7 @@ from rageval.metrics.structured import (
     SQLEquivalenceMetric,
 )
 from rageval.reporting import render_html_report
+from rageval.sqlite_vec import load_sqlite_vec
 from rageval.types import (
     MetricResult,
     QuestionType,
@@ -43,6 +49,7 @@ _DEMO_DEFAULT_OUTPUT = Path("demo-report.html")
 _DEMO_TARGET_CASES = 5
 _SUPPORTED_JUDGES = ("faithfulness", "relevance", "correctness", "routing", "all")
 _CliMetric = Callable[[TestCase, RAGResponse], MetricResult | None]
+_RunMode = str
 
 
 @click.group()
@@ -93,6 +100,20 @@ def version() -> None:
     default=False,
     help="Accepted for plan parity; deterministic demo runs do not use the LLM cache.",
 )
+@click.option(
+    "--live",
+    "live",
+    is_flag=True,
+    default=False,
+    help="Use live LLM/vector components.",
+)
+@click.option(
+    "--offline",
+    "offline",
+    is_flag=True,
+    default=False,
+    help="Use deterministic offline components.",
+)
 def run_command(
     suite_yaml: Path,
     output: Path,
@@ -100,8 +121,11 @@ def run_command(
     verbose: bool,
     metrics: tuple[str, ...],
     no_cache: bool,
+    live: bool,
+    offline: bool,
 ) -> None:
     """Run a suite against the demo system and write an HTML report."""
+    load_dotenv(Path.cwd() / ".env")
     suite = TestSuite.from_yaml(str(suite_yaml))
     if max_cases is not None:
         if max_cases <= 0:
@@ -110,12 +134,17 @@ def run_command(
 
     selected_metrics = _default_metrics(_parse_metric_selection(metrics))
     _ensure_demo_data_ready(_DB_PATH)
+    mode = _resolve_run_mode(live=live, offline=offline)
+    if mode == "live":
+        _ensure_live_keys_ready()
+        _ensure_live_data_ready(_DB_PATH)
     _execute_suite(
         suite,
         output=output,
         verbose=verbose,
         metrics=selected_metrics,
         no_cache=no_cache,
+        mode=mode,
     )
 
 
@@ -149,31 +178,68 @@ def run_command(
     default=False,
     help="Accepted for plan parity; deterministic demo runs do not use the LLM cache.",
 )
-def demo_command(output: Path, verbose: bool, metrics: tuple[str, ...], no_cache: bool) -> None:
+@click.option(
+    "--max-cases",
+    type=int,
+    default=_DEMO_TARGET_CASES,
+    show_default=True,
+    help="Evaluate at most N representative demo cases.",
+)
+@click.option(
+    "--live",
+    "live",
+    is_flag=True,
+    default=False,
+    help="Use live LLM/vector components.",
+)
+@click.option(
+    "--offline",
+    "offline",
+    is_flag=True,
+    default=False,
+    help="Use deterministic offline components.",
+)
+def demo_command(
+    output: Path,
+    verbose: bool,
+    metrics: tuple[str, ...],
+    no_cache: bool,
+    max_cases: int,
+    live: bool,
+    offline: bool,
+) -> None:
     """Run a 4-5 case representative subset for fast feedback."""
+    load_dotenv(Path.cwd() / ".env")
+    if max_cases <= 0:
+        raise click.BadParameter("--max-cases must be greater than zero")
     demo_suite_path = _demo_suite_path()
     try:
         full_suite = TestSuite.from_yaml(str(demo_suite_path))
     except FileNotFoundError as exc:
         raise click.ClickException(str(exc)) from exc
-    selected_cases = _select_demo_cases(full_suite.cases, _DEMO_TARGET_CASES)
+    selected_cases = _select_demo_cases(full_suite.cases, max_cases)
     if not selected_cases:
         raise click.ClickException("Demo suite contains no cases.")
     suite = full_suite.model_copy(update={"cases": selected_cases})
 
     selected_metrics = _default_metrics(_parse_metric_selection(metrics))
     _ensure_demo_data_ready(_DB_PATH)
+    mode = _resolve_run_mode(live=live, offline=offline)
+    if mode == "live":
+        _ensure_live_keys_ready()
+        _ensure_live_data_ready(_DB_PATH)
     _execute_suite(
         suite,
         output=output,
         verbose=verbose,
         metrics=selected_metrics,
         no_cache=no_cache,
+        mode=mode,
     )
 
 
 @main.command("calibrate")
-@click.argument("judge_name", type=click.Choice(_SUPPORTED_JUDGES))
+@click.argument("judge_names", nargs=-1, type=click.Choice(_SUPPORTED_JUDGES))
 @click.option(
     "--threshold",
     type=float,
@@ -187,12 +253,17 @@ def demo_command(output: Path, verbose: bool, metrics: tuple[str, ...], no_cache
     default=False,
     help="Bypass cached LLM responses for LLM-backed judges.",
 )
-def calibrate_command(judge_name: str, threshold: float, no_cache: bool) -> None:
+def calibrate_command(judge_names: tuple[str, ...], threshold: float, no_cache: bool) -> None:
     """Run judge calibration via scripts/calibrate_judge.py."""
+    if not judge_names:
+        raise click.ClickException(
+            "Provide at least one judge name: faithfulness, relevance, "
+            "correctness, routing, or all."
+        )
     load_dotenv(Path.cwd() / ".env")
     calibrate_judge = _load_calibrate_module()
     ok = asyncio.run(
-        calibrate_judge.run([judge_name], threshold=threshold, no_cache=no_cache)
+        calibrate_judge.run(list(judge_names), threshold=threshold, no_cache=no_cache)
     )
     if not ok:
         raise click.ClickException("Calibration failed.")
@@ -205,15 +276,21 @@ def _execute_suite(
     verbose: bool,
     metrics: list[_CliMetric],
     no_cache: bool,
+    mode: _RunMode,
 ) -> None:
-    evaluator = Evaluator(metrics=metrics)
-    result = asyncio.run(evaluator.evaluate(_demo_system(suite), suite))
+    evaluator = Evaluator(metrics=metrics, max_concurrent=1 if mode == "live" else 5)
+    result = asyncio.run(evaluator.evaluate(_system_for_mode(suite, mode, no_cache), suite))
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(render_html_report(result), encoding="utf-8")
 
     if verbose:
         if no_cache:
-            click.echo("--no-cache accepted; deterministic demo path does not use LLM cache.")
+            if mode == "live":
+                click.echo("--no-cache enabled; live LLM calls bypass the cache.")
+            else:
+                click.echo(
+                    "--no-cache accepted; deterministic offline path does not use LLM cache."
+                )
         for case_result in result.case_results:
             decision = case_result.response.routing_decision
             route = decision.value if decision is not None else "missing"
@@ -228,6 +305,7 @@ def _execute_suite(
             )
 
     click.echo(f"Suite: {result.suite_name}")
+    click.echo(f"Mode: {mode}")
     click.echo(f"Cases: {len(result.case_results)}")
     click.echo(f"Output: {output}")
     click.echo(f"Duration: {result.total_duration_seconds:.2f}s")
@@ -336,12 +414,61 @@ def _load_calibrate_module() -> ModuleType:
         return module
 
 
-def _demo_system(suite: TestSuite) -> HybridRAGSystem:
+def _system_for_mode(suite: TestSuite, mode: _RunMode, no_cache: bool) -> HybridRAGSystem:
+    if mode == "live":
+        return _live_system(no_cache=no_cache)
+    return _offline_system(suite)
+
+
+def _offline_system(suite: TestSuite) -> HybridRAGSystem:
     return HybridRAGSystem(
         router=_SuiteRouter(suite),
         sql_agent=_DemoSQLAgent(),
-        rag_agent=RAGAgent(_DB_PATH),
+        rag_agent=RAGAgent(_DB_PATH, mode="offline"),
     )
+
+
+def _demo_system(suite: TestSuite) -> HybridRAGSystem:
+    return _offline_system(suite)
+
+
+def _live_system(*, no_cache: bool) -> HybridRAGSystem:
+    _ensure_live_keys_ready()
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    assert anthropic_key is not None
+    llm = LLMClient(api_key=anthropic_key, default_no_cache=no_cache)
+    return HybridRAGSystem(
+        router=Router(llm),
+        sql_agent=SQLAgent(llm, _DB_PATH),
+        rag_agent=RAGAgent(_DB_PATH, mode="vector"),
+        synthesizer=Synthesizer(llm=llm),
+    )
+
+
+def _resolve_run_mode(*, live: bool, offline: bool) -> _RunMode:
+    if live and offline:
+        raise click.ClickException("--live and --offline are mutually exclusive.")
+    if live:
+        return "live"
+    if offline:
+        return "offline"
+    return "live" if _live_keys_present() else "offline"
+
+
+def _live_keys_present() -> bool:
+    return bool(os.environ.get("ANTHROPIC_API_KEY") and os.environ.get("OPENAI_API_KEY"))
+
+
+def _ensure_live_keys_ready() -> None:
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise click.ClickException(
+            "Live mode requires ANTHROPIC_API_KEY. Use --offline for the deterministic path."
+        )
+    if not os.environ.get("OPENAI_API_KEY"):
+        raise click.ClickException(
+            "Live vector retrieval requires OPENAI_API_KEY. "
+            "Use --offline for deterministic lexical retrieval."
+        )
 
 
 class _WhenApplicable:
@@ -486,6 +613,38 @@ def _ensure_demo_data_ready(db_path: Path) -> None:
             "Demo corpus is empty: article_chunks has no rows. "
             "Run `uv run python scripts/build_corpus.py --from-cache` after "
             "`uv run python scripts/build_stats_db.py`."
+        )
+
+
+def _ensure_live_data_ready(db_path: Path) -> None:
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            loaded, reason = load_sqlite_vec(con)
+            if not loaded:
+                raise click.ClickException(
+                    f"Live mode requires sqlite-vec: {reason}. "
+                    "Use --offline for deterministic lexical retrieval."
+                )
+            try:
+                embedding_count = con.execute(
+                    "SELECT COUNT(*) FROM chunk_embeddings"
+                ).fetchone()[0]
+            except sqlite3.Error as exc:
+                raise click.ClickException(
+                    "Live mode requires chunk_embeddings. Run "
+                    "`uv run python scripts/build_corpus.py --embed` after building chunks."
+                ) from exc
+        finally:
+            con.close()
+    except sqlite3.Error as exc:
+        raise click.ClickException(f"Could not inspect live vector data: {exc}") from exc
+
+    if int(embedding_count) <= 0:
+        raise click.ClickException(
+            "Live mode requires populated chunk_embeddings. Run "
+            "`uv run python scripts/build_corpus.py --embed` after "
+            "`uv run python scripts/build_corpus.py --from-cache`."
         )
 
 

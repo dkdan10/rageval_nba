@@ -13,6 +13,13 @@ from rageval.types import Document, QuestionType, RAGResponse, TestCase, TestSui
 from scripts.build_stats_db import _init_schema
 
 
+@pytest.fixture(autouse=True)
+def _isolate_cli_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(cli, "load_dotenv", lambda *_args, **_kwargs: None)
+
+
 def _db_with_corpus(tmp_path: Path, *, chunks: bool = True) -> Path:
     db_path = tmp_path / "nba.db"
     con = sqlite3.connect(db_path)
@@ -224,6 +231,8 @@ def test_cli_run_help_mentions_metrics_and_no_cache() -> None:
     assert result.exit_code == 0
     assert "--metrics" in result.output
     assert "--no-cache" in result.output
+    assert "--live" in result.output
+    assert "--offline" in result.output
 
 
 def test_cli_run_no_cache_is_accepted_and_verbose_notes_deterministic_path(
@@ -248,8 +257,124 @@ def test_cli_run_no_cache_is_accepted_and_verbose_notes_deterministic_path(
     )
 
     assert result.exit_code == 0, result.output
-    assert "deterministic demo path does not use LLM cache" in result.output
+    assert "deterministic offline path does not use LLM cache" in result.output
     assert output.exists()
+
+
+def test_cli_run_live_and_offline_are_mutually_exclusive(tmp_path: Path) -> None:
+    suite_path = tmp_path / "suite.yaml"
+    suite_path.write_text("name: tiny-suite\ncases: []\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "run",
+            str(suite_path),
+            "--output",
+            str(tmp_path / "report.html"),
+            "--live",
+            "--offline",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "mutually exclusive" in result.output
+
+
+def test_cli_run_explicit_live_requires_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    suite_path = tmp_path / "suite.yaml"
+    suite_path.write_text("name: tiny-suite\ncases: []\n", encoding="utf-8")
+    monkeypatch.setattr(cli, "_DB_PATH", _db_with_corpus(tmp_path))
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    result = CliRunner().invoke(
+        main,
+        ["run", str(suite_path), "--output", str(tmp_path / "report.html"), "--live"],
+    )
+
+    assert result.exit_code != 0
+    assert "API_KEY" in result.output
+
+
+def test_cli_run_defaults_to_live_when_required_keys_are_present(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    suite_path = tmp_path / "suite.yaml"
+    suite_path.write_text("name: tiny-suite\ncases: []\n", encoding="utf-8")
+    output = tmp_path / "report.html"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "_ensure_demo_data_ready", lambda _db_path: None)
+    monkeypatch.setattr(cli, "_ensure_live_data_ready", lambda _db_path: None)
+
+    class FakeSystem:
+        name = "fake-live"
+
+        async def answer(self, _question: str) -> RAGResponse:
+            return RAGResponse(answer="fake")
+
+    captured: dict[str, object] = {}
+
+    def fake_system_for_mode(
+        suite: TestSuite,
+        mode: str,
+        no_cache: bool,
+    ) -> FakeSystem:
+        captured["mode"] = mode
+        captured["no_cache"] = no_cache
+        return FakeSystem()
+
+    monkeypatch.setattr(cli, "_system_for_mode", fake_system_for_mode)
+
+    result = CliRunner().invoke(main, ["run", str(suite_path), "--output", str(output)])
+
+    assert result.exit_code == 0, result.output
+    assert captured["mode"] == "live"
+    assert "Mode: live" in result.output
+
+
+def test_cli_run_explicit_offline_overrides_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    suite_path = tmp_path / "suite.yaml"
+    suite_path.write_text("name: tiny-suite\ncases: []\n", encoding="utf-8")
+    output = tmp_path / "report.html"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "_ensure_demo_data_ready", lambda _db_path: None)
+
+    class FakeSystem:
+        name = "fake-offline"
+
+        async def answer(self, _question: str) -> RAGResponse:
+            return RAGResponse(answer="fake")
+
+    captured: dict[str, object] = {}
+
+    def fake_system_for_mode(
+        suite: TestSuite,
+        mode: str,
+        no_cache: bool,
+    ) -> FakeSystem:
+        captured["mode"] = mode
+        return FakeSystem()
+
+    monkeypatch.setattr(cli, "_system_for_mode", fake_system_for_mode)
+
+    result = CliRunner().invoke(
+        main,
+        ["run", str(suite_path), "--output", str(output), "--offline"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["mode"] == "offline"
+    assert "Mode: offline" in result.output
 
 
 def test_cli_run_fails_when_database_missing(
@@ -497,7 +622,7 @@ cases:
 
     assert result.exit_code == 0, result.output
     assert "Suite: demo-suite" in result.output
-    assert "deterministic demo path does not use LLM cache" in result.output
+    assert "deterministic offline path does not use LLM cache" in result.output
     # 4 unique categories present, target=5 → adds factual-002 to fill.
     assert "Cases: 5" in result.output
     text = output.read_text(encoding="utf-8")
@@ -585,6 +710,36 @@ def test_cli_calibrate_delegates_to_calibration_runner(monkeypatch: pytest.Monke
 
     assert result.exit_code == 0, result.output
     assert called == {"judges": ["routing"], "threshold": 0.9, "no_cache": True}
+
+
+def test_cli_calibrate_accepts_multiple_judges(monkeypatch: pytest.MonkeyPatch) -> None:
+    called: dict[str, object] = {}
+
+    async def fake_run(
+        judges: list[str],
+        threshold: float,
+        no_cache: bool,
+    ) -> bool:
+        called["judges"] = judges
+        called["threshold"] = threshold
+        called["no_cache"] = no_cache
+        return True
+
+    from scripts import calibrate_judge
+
+    monkeypatch.setattr(calibrate_judge, "run", fake_run)
+
+    result = CliRunner().invoke(
+        main,
+        ["calibrate", "faithfulness", "relevance", "correctness", "routing", "--no-cache"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert called == {
+        "judges": ["faithfulness", "relevance", "correctness", "routing"],
+        "threshold": 0.8,
+        "no_cache": True,
+    }
 
 
 def test_cli_calibrate_fails_when_calibration_fails(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -41,9 +41,11 @@ class LLMClient:
         self,
         api_key: str | None = None,
         max_concurrency: int = 5,
+        default_no_cache: bool = False,
     ) -> None:
         self._client = anthropic.AsyncAnthropic(api_key=api_key)
         self._sem = asyncio.Semaphore(max_concurrency)
+        self.default_no_cache = default_no_cache
         self.total_input_tokens: int = 0
         self.total_output_tokens: int = 0
         self.total_cost_usd: float = 0.0
@@ -71,7 +73,9 @@ class LLMClient:
             tool_schema = {"tools": tools, "tool_choice": tool_choice}
         key = get_cache_key(model, system, user, temperature, tool_schema=tool_schema)
 
-        if not no_cache:
+        effective_no_cache = no_cache or self.default_no_cache
+
+        if not effective_no_cache:
             cached = load_from_cache(key)
             if cached is not None:
                 cached = dict(cached)
@@ -116,7 +120,7 @@ class LLMClient:
         self.total_output_tokens += output_tokens
         self.total_cost_usd += cost
 
-        if not no_cache:
+        if not effective_no_cache:
             save_to_cache(key, result)
 
         result["cached"] = False

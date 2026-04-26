@@ -31,7 +31,7 @@ rate and exits non-zero if any judge falls below the threshold. Use
 Deterministic judges (currently only `routing`) require no API key.
 
 **Current status before Milestone 6:** live calibration was recorded on
-2026-04-25 with `claude-haiku-4-5-20251001`. Faithfulness, relevance,
+2026-04-26 with `claude-haiku-4-5-20251001`. Faithfulness, relevance,
 correctness, and routing all meet the >= 80% agreement threshold. Unit tests in
 `tests/test_judges.py` and `tests/test_calibrate.py` also exercise parsing,
 error handling, tool-use plumbing, position-swap handling, and agreement math
@@ -167,7 +167,7 @@ the intended Milestone 5 implementation and is considered plan-compliant.
 
 ## Results Table
 
-Run date: 2026-04-25
+Run date: 2026-04-26
 
 Model for LLM-backed judges: `claude-haiku-4-5-20251001`
 
@@ -175,8 +175,8 @@ Prompt changes in this calibration pass: none. The correctness implementation
 was adjusted so the swapped pass reverses presentation order while still scoring
 the original candidate answer against the reference answer.
 
-Reproducibility note: `uv run python scripts/calibrate_judge.py all --threshold
-0.8 --no-cache` produced the table below. The `--no-cache` flag bypasses
+Reproducibility note: `uv run rageval calibrate faithfulness relevance
+correctness routing --no-cache` produced the table below. The `--no-cache` flag bypasses
 `.rageval_cache/` so the recorded result reflects fresh Anthropic responses.
 
 | Judge | Agreement | Threshold | Status |
@@ -189,23 +189,18 @@ Reproducibility note: `uv run python scripts/calibrate_judge.py all --threshold
 Command summary:
 
 ```text
-uv run python scripts/calibrate_judge.py faithfulness --no-cache
-[PASS] faithfulness: 90% (9/10)
-
-uv run python scripts/calibrate_judge.py relevance --no-cache
-[PASS] relevance: 100% (10/10)
-
-uv run python scripts/calibrate_judge.py correctness --no-cache
-[PASS] correctness: 80% (8/10)
-
-uv run python scripts/calibrate_judge.py routing
-[PASS] routing: 100% (10/10)
-
-uv run python scripts/calibrate_judge.py all --threshold 0.8 --no-cache
+uv run rageval calibrate faithfulness relevance correctness routing --no-cache
+Total LLM cost: $0.0606 (42721 in / 6605 out tokens)
 [PASS] correctness: 80% (8/10)
 [PASS] faithfulness: 100% (10/10)
 [PASS] relevance: 100% (10/10)
 [PASS] routing: 100% (10/10)
+```
+
+Previous script entry point remains equivalent:
+
+```text
+uv run python scripts/calibrate_judge.py all --threshold 0.8 --no-cache
 ```
 
 Correctness swap evidence from an uncached run:

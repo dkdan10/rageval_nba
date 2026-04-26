@@ -39,6 +39,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from rageval.sqlite_vec import load_sqlite_vec
+
 DB_PATH = Path(__file__).parent.parent / "data" / "nba.db"
 RAW_DIR = Path(__file__).parent.parent / "data" / "raw"
 REAL_SEASONS = ["2020-21", "2021-22", "2022-23", "2023-24", "2024-25"]
@@ -205,14 +210,10 @@ CREATE TABLE IF NOT EXISTS ingestion_log (
 
 def _try_create_vector_table(con: sqlite3.Connection) -> bool:
     """Create chunk_embeddings via sqlite-vec if available. Return True on success."""
-    try:
-        import sqlite_vec  # type: ignore[import-untyped]
-    except ImportError:
+    loaded, _reason = load_sqlite_vec(con)
+    if not loaded:
         return False
     try:
-        con.enable_load_extension(True)
-        sqlite_vec.load(con)
-        con.enable_load_extension(False)
         con.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings "
             "USING vec0(chunk_id TEXT PRIMARY KEY, embedding FLOAT[1024])"

@@ -5,10 +5,11 @@ stored only in the gitignored cache directory (`data/raw/corpus/` by default).
 Do not commit full article text unless you have permission to redistribute it.
 
 Default mode ingests metadata and any explicitly provided, permitted `full_text`.
-Use `--fetch` to populate the raw cache while respecting robots.txt, and
+Use `--fetch` to populate the raw cache while respecting robots.txt,
 `--from-cache` to extract readable text from cached pages and chunk it into the
-SQLite corpus tables. No embeddings are generated here; the demo RAGAgent uses a
-deterministic lexical fallback, not production vector retrieval.
+SQLite corpus tables, and `--embed` to populate `chunk_embeddings` for the
+optional live/vector path. The default offline demo still uses deterministic
+lexical retrieval.
 """
 
 from __future__ import annotations
@@ -31,10 +32,20 @@ from urllib.robotparser import RobotFileParser
 
 import httpx
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from rageval.embeddings import (
+    DEFAULT_EMBEDDING_DIMENSIONS,
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_EMBEDDING_PROVIDER,
+    EmbeddingClient,
+    OpenAIEmbeddingClient,
+    estimate_embedding_cost_usd,
+)
+from rageval.sqlite_vec import load_sqlite_vec, serialize_float32
 from scripts.build_stats_db import _init_schema
 
 DB_PATH = Path(__file__).parent.parent / "data" / "nba.db"
@@ -42,6 +53,7 @@ DEFAULT_MANIFEST = Path(__file__).parent.parent / "examples" / "corpus" / "artic
 DEFAULT_CACHE_DIR = Path(__file__).parent.parent / "data" / "raw" / "corpus"
 DEFAULT_USER_AGENT = "rageval-nba-corpus-builder/0.1 (+https://github.com/)"
 DEFAULT_ROBOTS_TIMEOUT_SECONDS = 10.0
+DEFAULT_EMBEDDING_COST_CEILING_USD = 1.0
 _ARTICLE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _TOKEN_RE = re.compile(r"\S+")
 
@@ -348,6 +360,124 @@ def ingest_manifest(
         con.close()
 
 
+def embed_chunks(
+    db_path: Path = DB_PATH,
+    *,
+    provider: str = DEFAULT_EMBEDDING_PROVIDER,
+    model: str = DEFAULT_EMBEDDING_MODEL,
+    dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
+    batch_size: int = 32,
+    force: bool = False,
+    cost_ceiling_usd: float = DEFAULT_EMBEDDING_COST_CEILING_USD,
+    embedding_client: EmbeddingClient | None = None,
+) -> dict[str, int | float | str]:
+    """Populate ``chunk_embeddings`` for existing article chunks.
+
+    Tests pass a fake ``embedding_client``. Live use currently supports OpenAI's
+    ``text-embedding-3-small`` at 1024 dimensions so it fits the existing vec0
+    schema.
+    """
+    if provider != DEFAULT_EMBEDDING_PROVIDER:
+        raise ValueError(f"Unsupported embedding provider: {provider}")
+    if dimensions != DEFAULT_EMBEDDING_DIMENSIONS:
+        raise ValueError(
+            f"Unsupported embedding dimensions: {dimensions}; "
+            f"chunk_embeddings is FLOAT[{DEFAULT_EMBEDDING_DIMENSIONS}]"
+        )
+    if batch_size <= 0:
+        raise ValueError("--embedding-batch-size must be greater than zero")
+
+    client = embedding_client or OpenAIEmbeddingClient(
+        model=model,
+        dimensions=dimensions,
+    )
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
+    try:
+        _init_schema(con)
+        loaded, reason = load_sqlite_vec(con)
+        if not loaded:
+            raise RuntimeError(reason or "sqlite-vec could not be loaded")
+        con.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings "
+            f"USING vec0(chunk_id TEXT PRIMARY KEY, embedding FLOAT[{dimensions}])"
+        )
+        existing_ids: set[str] = set()
+        if not force:
+            existing_ids = {
+                str(row[0]) for row in con.execute("SELECT chunk_id FROM chunk_embeddings")
+            }
+        rows = con.execute(
+            """
+            SELECT chunk_id, content, token_count
+            FROM article_chunks
+            ORDER BY article_id, chunk_index
+            """
+        ).fetchall()
+        pending = [row for row in rows if force or str(row["chunk_id"]) not in existing_ids]
+        token_count = sum(int(row["token_count"]) for row in pending)
+        estimated_cost = estimate_embedding_cost_usd(token_count, model=model)
+        if estimated_cost > cost_ceiling_usd:
+            raise RuntimeError(
+                f"Estimated embedding cost ${estimated_cost:.4f} exceeds "
+                f"ceiling ${cost_ceiling_usd:.4f}; aborting before API calls."
+            )
+
+        embedded_count = 0
+        with con:
+            for start in range(0, len(pending), batch_size):
+                batch = pending[start : start + batch_size]
+                vectors = client.embed_texts([str(row["content"]) for row in batch])
+                if len(vectors) != len(batch):
+                    raise RuntimeError(
+                        f"Embedding client returned {len(vectors)} vectors for "
+                        f"{len(batch)} inputs"
+                    )
+                for row, vector in zip(batch, vectors, strict=True):
+                    if len(vector) != dimensions:
+                        raise RuntimeError(
+                            f"Embedding dimension mismatch for {row['chunk_id']}: "
+                            f"{len(vector)} != {dimensions}"
+                        )
+                    if force:
+                        con.execute(
+                            "DELETE FROM chunk_embeddings WHERE chunk_id = ?",
+                            (str(row["chunk_id"]),),
+                        )
+                    con.execute(
+                        "INSERT OR REPLACE INTO chunk_embeddings(chunk_id, embedding) "
+                        "VALUES (?, ?)",
+                        (str(row["chunk_id"]), serialize_float32(vector)),
+                    )
+                    embedded_count += 1
+
+            con.execute(
+                "INSERT INTO ingestion_log(run_at, source, records_added, notes)"
+                " VALUES (?, ?, ?, ?)",
+                (
+                    datetime.now(UTC).isoformat(),
+                    "corpus_embeddings",
+                    embedded_count,
+                    (
+                        f"provider={provider}; model={model}; dimensions={dimensions}; "
+                        f"force={force}; estimated_cost_usd={estimated_cost:.6f}"
+                    ),
+                ),
+            )
+        total_embeddings = int(con.execute("SELECT COUNT(*) FROM chunk_embeddings").fetchone()[0])
+        return {
+            "article_chunks": len(rows),
+            "embedded": embedded_count,
+            "skipped_existing": len(rows) - len(pending),
+            "chunk_embeddings": total_embeddings,
+            "estimated_cost_usd": estimated_cost,
+            "provider": provider,
+            "model": model,
+        }
+    finally:
+        con.close()
+
+
 def _fetch_article(
     article: CorpusArticle,
     cache_path: Path,
@@ -382,6 +512,25 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--max-tokens", type=int, default=220)
     parser.add_argument("--fetch", action="store_true")
     parser.add_argument("--from-cache", action="store_true")
+    parser.add_argument("--embed", action="store_true")
+    parser.add_argument(
+        "--embedding-provider",
+        default=DEFAULT_EMBEDDING_PROVIDER,
+        choices=[DEFAULT_EMBEDDING_PROVIDER],
+    )
+    parser.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
+    parser.add_argument(
+        "--embedding-dimensions",
+        type=int,
+        default=DEFAULT_EMBEDDING_DIMENSIONS,
+    )
+    parser.add_argument("--embedding-batch-size", type=int, default=32)
+    parser.add_argument("--force-embed", action="store_true")
+    parser.add_argument(
+        "--embedding-cost-ceiling-usd",
+        type=float,
+        default=DEFAULT_EMBEDDING_COST_CEILING_USD,
+    )
     parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
     parser.add_argument("--rate-limit-seconds", type=float, default=3.0)
     parser.add_argument("--user-agent", default=DEFAULT_USER_AGENT)
@@ -393,19 +542,36 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> None:
+    load_dotenv(Path.cwd() / ".env")
     args = _parse_args(list(sys.argv[1:] if argv is None else argv))
-    counts = ingest_manifest(
-        args.manifest,
-        db_path=args.db,
-        max_tokens=args.max_tokens,
-        fetch=args.fetch,
-        from_cache=args.from_cache,
-        cache_dir=args.cache_dir,
-        rate_limit_seconds=args.rate_limit_seconds,
-        user_agent=args.user_agent,
-        respect_robots=args.respect_robots,
-    )
-    print(f"Corpus built: {counts}")
+    should_ingest = args.fetch or args.from_cache or not args.embed
+    if should_ingest:
+        counts = ingest_manifest(
+            args.manifest,
+            db_path=args.db,
+            max_tokens=args.max_tokens,
+            fetch=args.fetch,
+            from_cache=args.from_cache,
+            cache_dir=args.cache_dir,
+            rate_limit_seconds=args.rate_limit_seconds,
+            user_agent=args.user_agent,
+            respect_robots=args.respect_robots,
+        )
+        print(f"Corpus built: {counts}")
+    if args.embed:
+        try:
+            embedding_counts = embed_chunks(
+                db_path=args.db,
+                provider=args.embedding_provider,
+                model=args.embedding_model,
+                dimensions=args.embedding_dimensions,
+                batch_size=args.embedding_batch_size,
+                force=args.force_embed,
+                cost_ceiling_usd=args.embedding_cost_ceiling_usd,
+            )
+        except RuntimeError as exc:
+            raise SystemExit(f"Embedding build failed: {exc}") from exc
+        print(f"Embeddings built: {embedding_counts}")
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ A Python library and CLI for evaluating hybrid RAG systems — systems that comb
 
 **Stack:** Python 3.11+, uv, Pydantic v2, Anthropic API (Claude), SQLite with sqlite-vec, Jinja2, Click, Rich.
 
-**Deliverables:** Installable Python package on PyPI, HTML report generator, CLI, reference NBA demo system with 40 handcrafted test cases, 90-second demo video.
+**Deliverables:** Locally installable Python package, HTML report generator, CLI, reference NBA demo system with 40 handcrafted test cases, 90-second demo video.
 
 ---
 
@@ -784,7 +784,7 @@ Each milestone has: (a) goal, (b) files to create/modify, (c) ship criterion.
   - Calibration results table
   - Roadmap
 - Write `docs/prompt_evolution.md`: why each prompt changed between versions
-- Publish to PyPI: `uv build && uv publish` (requires PyPI token)
+- Verify local package build with `uv build`
 - Tag `v0.1.0`, write release notes
 - Record 90-second Loom: scroll report, explain one finding, show one code snippet
 - Pin repo on GitHub profile
