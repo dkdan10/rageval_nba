@@ -190,7 +190,8 @@ def test_vector_mode_retrieves_embeddings_when_sqlite_vec_available(tmp_path: Pa
 
 
 def test_vector_mode_falls_back_to_lexical_when_vector_unavailable(tmp_path: Path) -> None:
-    docs = RAGAgent(db_path=_corpus_db(tmp_path), mode="vector").retrieve(
+    agent = RAGAgent(db_path=_corpus_db(tmp_path), mode="vector")
+    docs = agent.retrieve(
         "four factors",
         k=1,
     )
@@ -198,6 +199,39 @@ def test_vector_mode_falls_back_to_lexical_when_vector_unavailable(tmp_path: Pat
     assert docs
     assert docs[0].id == "ctg-four-factors#0"
     assert docs[0].metadata["retrieval_mode"] == "lexical_fallback"
+    assert docs[0].metadata["fallback_reason"] in {
+        "embedding_client_unavailable",
+        "embedding_query_failed",
+    }
+    assert agent.last_retrieval_diagnostics["retrieval_mode"] == "lexical_fallback"
+    assert agent.last_retrieval_diagnostics["fallback_doc_count"] == 1
+
+
+def test_vector_mode_records_fallback_even_when_lexical_returns_no_docs(
+    tmp_path: Path,
+) -> None:
+    agent = RAGAgent(db_path=_corpus_db(tmp_path), mode="vector")
+
+    docs = agent.retrieve("zzzz unmatched query", k=1)
+
+    assert docs == []
+    assert agent.last_retrieval_diagnostics["retrieval_mode"] == "lexical_fallback"
+    assert agent.last_retrieval_diagnostics["fallback_doc_count"] == 0
+    assert agent.last_retrieval_diagnostics["fallback_reason"] in {
+        "embedding_client_unavailable",
+        "embedding_query_failed",
+    }
+
+
+def test_auto_mode_keeps_tolerant_lexical_fallback(tmp_path: Path) -> None:
+    docs = RAGAgent(db_path=_corpus_db(tmp_path), mode="auto").retrieve(
+        "four factors",
+        k=1,
+    )
+
+    assert docs
+    assert docs[0].id == "ctg-four-factors#0"
+    assert docs[0].metadata["retrieval_mode"] == "lexical"
 
 
 def test_retrieve_rejects_unknown_mode(tmp_path: Path) -> None:

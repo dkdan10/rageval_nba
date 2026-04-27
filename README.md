@@ -24,7 +24,7 @@ retrieval, structured correctness, answer quality, and refusal behavior
 A reference `HybridRAGSystem` (router → SQL or RAG or both → synthesizer →
 refusal) wired to a SQLite stats database and a 40-source article corpus. The
 `Evaluator` runs a YAML test suite of 42 cases against it, scores each case on
-the applicable metrics, and writes a single self-contained HTML report with
+the applicable metrics, and writes a single HTML report with
 aggregate scores, route diagnostics, per-category heatmap, highlighted failure
 modes, and a per-case drilldown for every question (model answer, SQL evidence,
 retrieved chunks, per-metric tiles).
@@ -63,17 +63,19 @@ uv run rageval demo --output demo-report.html --offline
 uv run rageval run examples/nba_test_suite.yaml --output report.html --offline
 ```
 
-Open `demo-report.html` for a 5-case smoke report or `report.html` for the full
-42-case suite. Generated reports, `data/nba.db`, raw fetched pages, and the
-LLM cache are gitignored.
+Open `demo-report.html` for a 5-case deterministic fixture smoke report or
+`report.html` for the full 42-case fixture suite. This mode proves evaluator,
+metric, and report plumbing; live mode exercises the real LLM/router/SQL/vector
+components. Generated reports, `data/nba.db`, raw fetched pages, and the LLM
+cache are gitignored.
 
 ## CLI
 
 ```bash
-# Fast deterministic feedback: one representative sample per route/category.
+# Fast deterministic fixture feedback: one representative sample per route/category.
 uv run rageval demo --output demo-report.html --offline --verbose
 
-# Full deterministic NBA suite.
+# Full deterministic fixture NBA suite.
 uv run rageval run examples/nba_test_suite.yaml --output report.html --offline
 
 # Run a deterministic metric subset.
@@ -93,10 +95,12 @@ uv run rageval run examples/nba_test_suite.yaml --output report.html --live --ve
 
 `rageval run` also supports `--max-cases N` and `--no-cache`. If both
 `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` are present, the CLI defaults to live
-mode; otherwise it uses the deterministic offline path. `--offline` always
-forces the fixture-backed path. `--no-cache` bypasses the Anthropic disk cache
-for live LLM calls and calibration. After rebuilding `data/nba.db` you must
-rerun `scripts/build_corpus.py --from-cache` (and `--embed` for live mode) to
+mode; otherwise it uses the deterministic fixture demo path. `--offline` always
+forces suite-labeled routing, canned/demo SQL branches, and lexical retrieval.
+`--no-cache` bypasses the Anthropic disk cache for live LLM calls and
+calibration. Live reports surface vector fallback warnings if vector retrieval
+degrades to lexical retrieval. After rebuilding `data/nba.db` you must rerun
+`scripts/build_corpus.py --from-cache` (and `--embed` for live mode) to
 repopulate `article_chunks` and `chunk_embeddings`.
 
 ## Architecture
@@ -117,10 +121,11 @@ flowchart LR
 
 In **live mode**, Router/SQLAgent/Synthesizer are Anthropic-backed and the
 RAG agent uses sqlite-vec ([src/rageval/cli.py:546-557](src/rageval/cli.py#L546-L557)).
-In **offline mode**, the same boxes are deterministic stand-ins: `_SuiteRouter`
-reads the labeled `question_type`, `_DemoSQLAgent` returns canned SQL keyed by
-question substring, and the synthesizer stitches a fixed-format answer from the
-SQL rows and retrieved chunks ([src/rageval/cli.py:791-903](src/rageval/cli.py#L791-L903)).
+In **deterministic fixture demo mode** (`--offline`), the same boxes are
+stand-ins: `_SuiteRouter` reads the labeled `question_type`, `_DemoSQLAgent`
+returns canned SQL keyed by question substring, and the synthesizer stitches a
+fixed-format answer from the SQL rows and retrieved chunks
+([src/rageval/cli.py:791-903](src/rageval/cli.py#L791-L903)).
 The metrics, evaluator, and report are identical across both modes.
 
 The live SQL agent's prompt encodes NBA league-leader qualification rules — for
@@ -221,7 +226,7 @@ SQLite rows.
 
 The default `data/nba.db` is built by `scripts/build_stats_db.py` (seed mode,
 fast and offline). Real ingestion from `nba_api` is available via
-`--mode real --resume-raw`; the offline evaluation path then runs against
+`--mode real --resume-raw`; the deterministic fixture demo then runs against
 whichever DB happens to be at `data/nba.db`. Real ingestion is rate-limited:
 
 ```bash
@@ -244,12 +249,12 @@ project keeps using deterministic lexical retrieval.
 - The article corpus tracks only metadata + URLs for 26 of 40 sources. The
   remaining 14 carry repo-authored summaries — useful for retrieval matching
   but not full article text.
-- Offline mode uses lexical-overlap retrieval, not production vector search.
-  Vector retrieval is opt-in via `OPENAI_API_KEY` + sqlite-vec, used by
-  default in live mode.
+- Deterministic fixture demo mode uses lexical-overlap retrieval, not production
+  vector search. Vector retrieval is opt-in via `OPENAI_API_KEY` + sqlite-vec,
+  used by default in live mode.
 - Calibration sets are `n=10` per judge. Treat the 80% / 100% numbers as
   smoke checks, not as tight statistical estimates.
-- The deterministic offline path uses substring-keyed canned SQL (see
+- The deterministic fixture path uses substring-keyed canned SQL (see
   `_DemoSQLAgent` in [src/rageval/cli.py](src/rageval/cli.py)). It exercises
   the metrics and reporting pipeline but does not test the live SQL agent's
   prompt, which is the path used in live mode.

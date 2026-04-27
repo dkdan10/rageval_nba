@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Protocol
+from typing import Any, Protocol
 
 from rageval.demo.rag_agent import RAGAgent
 from rageval.demo.router import Router
@@ -56,6 +56,7 @@ class HybridRAGSystem:
         errors: list[str] = []
         sql_result: SQLResult | None = None
         docs: list[Document] = []
+        metadata: dict[str, Any] = {}
         refused = False
 
         try:
@@ -93,8 +94,16 @@ class HybridRAGSystem:
         if route in {QuestionType.ANALYTICAL, QuestionType.HYBRID}:
             try:
                 docs = self.rag_agent.retrieve(question, k=self.top_k)
+                diagnostics = getattr(self.rag_agent, "last_retrieval_diagnostics", None)
+                if isinstance(diagnostics, dict) and diagnostics:
+                    metadata["retrieval"] = dict(diagnostics)
             except Exception as exc:  # noqa: BLE001
                 docs = []
+                metadata["retrieval"] = {
+                    "requested_mode": getattr(self.rag_agent, "mode", None),
+                    "retrieval_mode": None,
+                    "fallback_reason": "rag_exception",
+                }
                 errors.append(f"RAG path failed: {type(exc).__name__}: {exc}")
 
         try:
@@ -115,6 +124,7 @@ class HybridRAGSystem:
             cost_usd=_component_cost(self.router, self.sql_agent, self.synthesizer)
             - cost_started,
             refused=refused,
+            metadata=metadata,
         )
 
 

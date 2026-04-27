@@ -98,6 +98,77 @@ def test_render_html_report_contains_summary_and_case_content() -> None:
     assert "CDNs" in html
 
 
+def test_render_html_report_labels_offline_as_fixture_demo() -> None:
+    result = _fake_result().model_copy(update={"metadata": {"run_mode": "offline"}})
+
+    html = render_html_report(result)
+
+    assert "Deterministic fixture demo" in html
+    assert "labeled suite routing" in html
+    assert "canned/demo SQL branches" in html
+    assert "Use --live to exercise the real Router" in html
+
+
+def test_render_html_report_surfaces_vector_fallback_findings() -> None:
+    result = _fake_result()
+    fallback_doc = Document(
+        id="doc-fallback",
+        content="Fallback snippet",
+        metadata={
+            "title": "Fallback Doc",
+            "retrieval_mode": "lexical_fallback",
+            "fallback_reason": "embedding_query_failed",
+        },
+    )
+    case = result.case_results[0]
+    response = case.response.model_copy(
+        update={"retrieved_docs": [fallback_doc]},
+    )
+    result = result.model_copy(
+        update={
+            "case_results": [case.model_copy(update={"response": response})],
+        }
+    )
+
+    html = render_html_report(result)
+
+    assert "Vector Fallbacks" in html
+    assert "Vector retrieval fallback" in html
+    assert "lexical_fallback" in html
+    assert "fallback: embedding_query_failed" in html
+    assert "case-001" in html
+
+
+def test_render_html_report_surfaces_docless_vector_fallback() -> None:
+    result = _fake_result()
+    case = result.case_results[0]
+    response = case.response.model_copy(
+        update={
+            "retrieved_docs": [],
+            "metadata": {
+                "retrieval": {
+                    "requested_mode": "vector",
+                    "retrieval_mode": "lexical_fallback",
+                    "fallback_reason": "no_vector_results",
+                    "fallback_doc_count": 0,
+                }
+            },
+        }
+    )
+    result = result.model_copy(
+        update={
+            "case_results": [case.model_copy(update={"response": response})],
+        }
+    )
+
+    html = render_html_report(result)
+
+    assert "Vector Fallbacks" in html
+    assert "Vector retrieval fallback" in html
+    assert "no_vector_results" in html
+    assert "case-001" in html
+
+
 def test_render_html_report_includes_intro_and_metric_descriptions() -> None:
     html = render_html_report(_fake_result())
 
@@ -191,7 +262,7 @@ def test_render_html_report_handles_missing_run_metadata() -> None:
 
     assert "Evaluation" in html
     assert "Live evaluation" not in html
-    assert "Offline evaluation" not in html
+    assert "Deterministic fixture demo" not in html
 
 
 def test_render_html_report_handles_missing_routing_decision() -> None:

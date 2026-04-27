@@ -402,6 +402,9 @@
               <span class="pill">Metrics: {{ run_metadata.metrics_selected|join(", ") }}</span>
             {% endif %}
           </div>
+          {% if run_metadata.run_mode_note %}
+            <p class="footnotes">{{ run_metadata.run_mode_note }}</p>
+          {% endif %}
         </div>
         <div class="status-strip">
           <div class="status-card">
@@ -411,6 +414,10 @@
           <div class="status-card">
             <span class="status-icon {% if diagnostics.metric_errors == 0 %}status-ok{% else %}status-err{% endif %}">✓</span>
             <span><strong>{{ diagnostics.metric_errors }}</strong>Metric Errors</span>
+          </div>
+          <div class="status-card">
+            <span class="status-icon {% if diagnostics.cases_with_lexical_fallback == 0 %}status-ok{% else %}status-warn{% endif %}">!</span>
+            <span><strong>{{ diagnostics.cases_with_lexical_fallback }}</strong>Vector Fallbacks</span>
           </div>
           <div class="status-card">
             <span class="status-icon status-info">$</span>
@@ -767,6 +774,9 @@
                             {% endif %}
                             {% if doc.metadata.embedding_model %}
                               <span class="pill">{{ doc.metadata.embedding_model }}</span>
+                            {% endif %}
+                            {% if doc.metadata.fallback_reason %}
+                              <span class="pill warn">fallback: {{ doc.metadata.fallback_reason }}</span>
                             {% endif %}
                           </div>
                         </li>

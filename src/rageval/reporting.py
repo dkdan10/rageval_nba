@@ -292,6 +292,15 @@ def _diagnostics(result: EvaluationResult) -> dict[str, int]:
             for metric in case.metric_results
             if metric.error is not None
         ),
+        "cases_with_vector_docs": sum(
+            1 for case in result.case_results if _case_has_retrieval_mode(case, "vector")
+        ),
+        "cases_with_lexical_fallback": sum(
+            1
+            for case in result.case_results
+            if _case_has_retrieval_mode(case, "lexical_fallback")
+            or _response_retrieval_mode(case) == "lexical_fallback"
+        ),
     }
     route_counts: dict[str, int] = {}
     for case in result.case_results:
@@ -328,6 +337,11 @@ def _health_summary(result: EvaluationResult, diagnostics: dict[str, int]) -> li
             "label": "With Retrieved Docs",
             "value": str(diagnostics["cases_with_retrieved_docs"]),
             "status": "neutral",
+        },
+        {
+            "label": "Vector Fallback",
+            "value": str(diagnostics["cases_with_lexical_fallback"]),
+            "status": "good" if diagnostics["cases_with_lexical_fallback"] == 0 else "warn",
         },
     ]
 
@@ -516,6 +530,22 @@ def _failure_modes(result: EvaluationResult) -> list[dict[str, Any]]:
                 }
             )
 
+        fallback_reasons = _retrieval_fallback_reasons(cr)
+        if fallback_reasons:
+            issues.append(
+                {
+                    "case_id": cr.case_id,
+                    "category": category_label,
+                    "category_key": category_key,
+                    "issue_type": "retrieval_fallback",
+                    "metric_name": None,
+                    "explanation": (
+                        "Vector retrieval fell back to lexical retrieval: "
+                        + ", ".join(fallback_reasons)
+                    ),
+                }
+            )
+
         for m in cr.metric_results:
             if m.error is not None:
                 issues.append(
@@ -574,6 +604,8 @@ def _failure_modes(result: EvaluationResult) -> list[dict[str, Any]]:
 def _finding_group(issue_type: str) -> str:
     if issue_type in {"metric_error", "sql_error", "missing_route"}:
         return "Errors"
+    if issue_type == "retrieval_fallback":
+        return "Retrieval Fallback"
     if issue_type == "refusal_disagreement":
         return "Disagreements"
     if issue_type == "metric_skipped":
@@ -584,7 +616,14 @@ def _finding_group(issue_type: str) -> str:
 
 
 def _notable_findings(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    order = ["Errors", "Disagreements", "Explicit Skips", "Zero Scores", "Other"]
+    order = [
+        "Errors",
+        "Retrieval Fallback",
+        "Disagreements",
+        "Explicit Skips",
+        "Zero Scores",
+        "Other",
+    ]
     grouped: dict[str, list[dict[str, Any]]] = {}
     for issue in issues:
         grouped.setdefault(_finding_group(str(issue["issue_type"])), []).append(issue)
@@ -628,6 +667,20 @@ def _finding_cards(
                 "count": len({issue["case_id"] for issue in zero_retrieval}),
                 "status": "err",
                 "icon": "×",
+            }
+        )
+    fallback = [issue for issue in issues if issue["issue_type"] == "retrieval_fallback"]
+    if fallback:
+        cards.append(
+            {
+                "title": "Vector retrieval fallback",
+                "description": _summarize_cases(
+                    fallback,
+                    "case used lexical fallback instead of vector retrieval.",
+                ),
+                "count": len({issue["case_id"] for issue in fallback}),
+                "status": "warn",
+                "icon": "!",
             }
         )
     refusal_disagreements = [
@@ -789,6 +842,7 @@ def _run_metadata(result: EvaluationResult) -> dict[str, Any]:
     return {
         "run_mode": run_mode if isinstance(run_mode, str) else None,
         "run_mode_label": _run_mode_label(run_mode),
+        "run_mode_note": _run_mode_note(run_mode),
         "no_cache": no_cache if isinstance(no_cache, bool) else None,
         "metrics_selected": metrics_selected if isinstance(metrics_selected, list) else None,
     }
@@ -839,8 +893,45 @@ def _run_mode_label(value: Any) -> str:
     if value == "live":
         return "Live evaluation"
     if value == "offline":
-        return "Offline evaluation"
+        return "Deterministic fixture demo"
     return "Evaluation"
+
+
+def _run_mode_note(value: Any) -> str | None:
+    if value == "offline":
+        return (
+            "This run uses labeled suite routing, canned/demo SQL branches, "
+            "and lexical retrieval to exercise evaluator, metric, and report plumbing. "
+            "Use --live to exercise the real Router, SQLAgent, RAGAgent, and Synthesizer."
+        )
+    return None
+
+
+def _case_has_retrieval_mode(case_result: Any, mode: str) -> bool:
+    return any(
+        doc.metadata.get("retrieval_mode") == mode
+        for doc in case_result.response.retrieved_docs
+    )
+
+
+def _response_retrieval_mode(case_result: Any) -> str | None:
+    retrieval = case_result.response.metadata.get("retrieval")
+    if not isinstance(retrieval, dict):
+        return None
+    mode = retrieval.get("retrieval_mode")
+    return mode if isinstance(mode, str) else None
+
+
+def _retrieval_fallback_reasons(case_result: Any) -> list[str]:
+    reasons = {
+        str(doc.metadata.get("fallback_reason", "unknown"))
+        for doc in case_result.response.retrieved_docs
+        if doc.metadata.get("retrieval_mode") == "lexical_fallback"
+    }
+    retrieval = case_result.response.metadata.get("retrieval")
+    if isinstance(retrieval, dict) and retrieval.get("retrieval_mode") == "lexical_fallback":
+        reasons.add(str(retrieval.get("fallback_reason") or "unknown"))
+    return sorted(reasons)
 
 
 def _score_class(value: float | None) -> str:

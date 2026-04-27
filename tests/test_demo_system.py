@@ -27,14 +27,24 @@ class FakeSQLAgent:
 
 
 class FakeRAGAgent:
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail: bool = False,
+        docs: list[Document] | None = None,
+        diagnostics: dict[str, object] | None = None,
+    ) -> None:
         self.fail = fail
+        self.docs = docs
+        self.last_retrieval_diagnostics = diagnostics or {}
         self.calls: list[tuple[str, int]] = []
 
     def retrieve(self, question: str, k: int = 5) -> list[Document]:
         self.calls.append((question, k))
         if self.fail:
             raise RuntimeError("rag down")
+        if self.docs is not None:
+            return self.docs
         return [Document(id="doc#0", content="Article evidence.")]
 
 
@@ -156,6 +166,30 @@ async def test_hybrid_route_calls_sql_and_rag() -> None:
     assert len(response.retrieved_docs) == 1
     assert len(sql.calls) == 1
     assert rag.calls == [("Stats and analysis?", 3)]
+
+
+async def test_rag_retrieval_diagnostics_survive_empty_doc_fallback() -> None:
+    rag = FakeRAGAgent(
+        docs=[],
+        diagnostics={
+            "requested_mode": "vector",
+            "retrieval_mode": "lexical_fallback",
+            "fallback_reason": "no_vector_results",
+            "fallback_doc_count": 0,
+        },
+    )
+    system = HybridRAGSystem(
+        router=FakeRouter(QuestionType.ANALYTICAL),
+        sql_agent=FakeSQLAgent(),
+        rag_agent=rag,
+        synthesizer=FakeSynthesizer(),
+    )
+
+    response = await system.answer("What are four factors?")
+
+    assert response.retrieved_docs == []
+    assert response.metadata["retrieval"]["retrieval_mode"] == "lexical_fallback"
+    assert response.metadata["retrieval"]["fallback_reason"] == "no_vector_results"
 
 
 async def test_unanswerable_route_refuses_without_paths() -> None:

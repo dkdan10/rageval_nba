@@ -124,7 +124,10 @@ def version() -> None:
     "offline",
     is_flag=True,
     default=False,
-    help="Use deterministic offline components.",
+    help=(
+        "Use the deterministic fixture demo: suite-labeled routing, "
+        "canned/demo SQL branches, and lexical retrieval."
+    ),
 )
 def run_command(
     suite_yaml: Path,
@@ -212,7 +215,10 @@ def run_command(
     "offline",
     is_flag=True,
     default=False,
-    help="Use deterministic offline components.",
+    help=(
+        "Use the deterministic fixture demo: suite-labeled routing, "
+        "canned/demo SQL branches, and lexical retrieval."
+    ),
 )
 def demo_command(
     output: Path,
@@ -305,7 +311,7 @@ def _execute_suite(
             console.print("--no-cache enabled; live LLM calls bypass the cache.")
         else:
             console.print(
-                "--no-cache accepted; deterministic offline path does not use LLM cache."
+                "--no-cache accepted; deterministic fixture demo does not use LLM cache."
             )
 
     result = asyncio.run(
@@ -328,6 +334,13 @@ def _execute_suite(
     result = result.model_copy(update={"metadata": metadata})
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(render_html_report(result), encoding="utf-8")
+
+    fallback_case_ids = _retrieval_fallback_case_ids(result)
+    if mode == "live" and fallback_case_ids:
+        click.echo(
+            "Warning: live vector retrieval fell back to lexical for "
+            f"{len(fallback_case_ids)} cases. See report diagnostics."
+        )
 
     click.echo(f"Suite: {result.suite_name}")
     click.echo(f"Mode: {mode}")
@@ -410,6 +423,23 @@ def _case_progress_line(case_result: CaseResult) -> str:
         f"errors={metric_errors} "
         f"skipped={metric_skips}"
     )
+
+
+def _retrieval_fallback_case_ids(result: EvaluationResult) -> list[str]:
+    case_ids: list[str] = []
+    for case_result in result.case_results:
+        doc_fallback = any(
+            doc.metadata.get("retrieval_mode") == "lexical_fallback"
+            for doc in case_result.response.retrieved_docs
+        )
+        retrieval = case_result.response.metadata.get("retrieval")
+        response_fallback = (
+            isinstance(retrieval, dict)
+            and retrieval.get("retrieval_mode") == "lexical_fallback"
+        )
+        if doc_fallback or response_fallback:
+            case_ids.append(case_result.case_id)
+    return case_ids
 
 
 def _select_demo_cases(cases: list[TestCase], target: int) -> list[TestCase]:

@@ -405,6 +405,7 @@ def test_rag_response_minimal() -> None:
     assert resp.latency_ms is None
     assert resp.cost_usd is None
     assert resp.refused is False
+    assert resp.metadata == {}
 
 
 def test_rag_response_full() -> None:
@@ -418,11 +419,13 @@ def test_rag_response_full() -> None:
         latency_ms=312.5,
         cost_usd=0.0023,
         refused=False,
+        metadata={"retrieval": {"retrieval_mode": "vector"}},
     )
     assert len(resp.retrieved_docs) == 1
     assert resp.sql_result is not None
     assert resp.sql_result.rows[0]["val"] == 42
     assert resp.routing_decision == QuestionType.HYBRID
+    assert resp.metadata["retrieval"]["retrieval_mode"] == "vector"
     assert resp.latency_ms == pytest.approx(312.5)
 
 

@@ -2,7 +2,8 @@
 
 The default ``offline`` mode uses deterministic lexical scoring. The optional
 ``vector``/``auto`` modes use sqlite-vec when chunk embeddings and an embedding
-client are available, then fall back to lexical retrieval when they are not.
+client are available. ``vector`` exposes fallback reasons in document metadata
+when lexical retrieval is used instead.
 """
 
 from __future__ import annotations
@@ -62,7 +63,8 @@ class RAGAgent:
     """Retrieve article chunks with lexical or sqlite-vec search.
 
     ``offline`` never calls an embedding provider. ``vector`` and ``auto`` try
-    sqlite-vec first, then return lexical results if vector search cannot run.
+    sqlite-vec first. ``vector`` marks lexical fallback metadata when vector
+    search cannot run.
     """
 
     def __init__(
@@ -77,21 +79,42 @@ class RAGAgent:
         self._db_path = db_path or _DB_PATH
         self.mode = mode
         self._embedding_client = embedding_client
+        self.last_retrieval_diagnostics: dict[str, Any] = {}
 
     def retrieve(self, question: str, k: int = 5) -> list[Document]:
+        self.last_retrieval_diagnostics = {
+            "requested_mode": self.mode,
+            "retrieval_mode": None,
+            "fallback_reason": None,
+        }
         if k <= 0 or not self._db_path.exists():
+            if k <= 0:
+                self.last_retrieval_diagnostics["fallback_reason"] = "invalid_top_k"
+            else:
+                self.last_retrieval_diagnostics["fallback_reason"] = "database_missing"
             return []
         if self.mode in {"vector", "auto"}:
-            docs = self._retrieve_vector(question, k)
+            docs, fallback_reason = self._retrieve_vector(question, k)
             if docs:
+                self.last_retrieval_diagnostics["retrieval_mode"] = "vector"
                 return docs
             if self.mode == "vector":
-                # Keep the demo resilient, but mark the fallback in returned metadata.
                 lexical = self._retrieve_lexical(question, k)
+                self.last_retrieval_diagnostics.update(
+                    {
+                        "retrieval_mode": "lexical_fallback",
+                        "fallback_reason": fallback_reason,
+                        "fallback_doc_count": len(lexical),
+                    }
+                )
                 for doc in lexical:
                     doc.metadata["retrieval_mode"] = "lexical_fallback"
+                    doc.metadata["fallback_reason"] = fallback_reason
                 return lexical
-        return self._retrieve_lexical(question, k)
+        docs = self._retrieve_lexical(question, k)
+        self.last_retrieval_diagnostics["retrieval_mode"] = "lexical"
+        self.last_retrieval_diagnostics["fallback_doc_count"] = len(docs)
+        return docs
 
     def _retrieve_lexical(self, question: str, k: int) -> list[Document]:
         try:
@@ -134,25 +157,25 @@ class RAGAgent:
             doc.metadata["retrieval_mode"] = "lexical"
         return docs
 
-    def _retrieve_vector(self, question: str, k: int) -> list[Document]:
+    def _retrieve_vector(self, question: str, k: int) -> tuple[list[Document], str]:
         client = self._embedding_client
         if client is None:
             try:
                 client = OpenAIEmbeddingClient()
             except Exception:
-                return []
+                return [], "embedding_client_unavailable"
 
         try:
             query_embedding = client.embed_query(question)
         except Exception:
-            return []
+            return [], "embedding_query_failed"
 
         try:
             con = sqlite3.connect(f"file:{self._db_path}?mode=ro", uri=True)
             con.row_factory = sqlite3.Row
             loaded, _reason = load_sqlite_vec(con)
             if not loaded:
-                return []
+                return [], "sqlite_vec_unavailable"
             try:
                 rows = con.execute(
                     """
@@ -179,14 +202,16 @@ class RAGAgent:
             finally:
                 con.close()
         except sqlite3.Error:
-            return []
+            return [], "vector_query_failed"
 
         docs = [_row_to_document(row, 1.0 / (1.0 + float(row["distance"]))) for row in rows]
+        if not docs:
+            return [], "no_vector_results"
         for doc, row in zip(docs, rows, strict=True):
             doc.metadata["retrieval_mode"] = "vector"
             doc.metadata["distance"] = float(row["distance"])
             doc.metadata["embedding_model"] = getattr(client, "model", None)
-        return docs
+        return docs, ""
 
 
 def _row_to_document(row: sqlite3.Row, score: float) -> Document:

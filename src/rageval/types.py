@@ -106,6 +106,7 @@ class RAGResponse(BaseModel):
     latency_ms: float | None = None
     cost_usd: float | None = None
     refused: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class RAGSystem(Protocol):

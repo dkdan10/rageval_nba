@@ -123,7 +123,8 @@ cases:
     assert result.exit_code == 0, result.output
     html = output.read_text(encoding="utf-8")
     assert "tiny-suite" in html
-    assert "Offline evaluation" in html
+    assert "Deterministic fixture demo" in html
+    assert "labeled suite routing" in html
     assert "Suite: tiny-suite" in result.output
     assert "Cases: 1" in result.output
     assert f"Output: {output}" in result.output
@@ -247,6 +248,7 @@ def test_cli_run_help_mentions_metrics_and_no_cache() -> None:
     assert "--no-cache" in result.output
     assert "--live" in result.output
     assert "--offline" in result.output
+    assert "fixture demo" in result.output
 
 
 def test_cli_run_no_cache_is_accepted_and_verbose_notes_deterministic_path(
@@ -271,7 +273,7 @@ def test_cli_run_no_cache_is_accepted_and_verbose_notes_deterministic_path(
     )
 
     assert result.exit_code == 0, result.output
-    assert "deterministic offline path does not use LLM cache" in result.output
+    assert "deterministic fixture demo does not use LLM cache" in result.output
     assert "Cache bypassed" in output.read_text(encoding="utf-8")
     assert output.exists()
 
@@ -384,6 +386,115 @@ def test_cli_run_defaults_to_live_when_required_keys_are_present(
     assert captured["mode"] == "live"
     assert "Mode: live" in result.output
     assert "Live evaluation" in output.read_text(encoding="utf-8")
+
+
+def test_cli_run_live_warns_when_vector_falls_back(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    suite_path = tmp_path / "suite.yaml"
+    suite_path.write_text(
+        """
+name: tiny-suite
+cases:
+  - id: case-001
+    question: What are the four factors?
+    question_type: analytical
+    relevant_doc_ids: ["doc-1"]
+""",
+        encoding="utf-8",
+    )
+    output = tmp_path / "report.html"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "_ensure_demo_data_ready", lambda _db_path: None)
+    monkeypatch.setattr(cli, "_ensure_live_data_ready", lambda _db_path: None)
+
+    class FakeSystem:
+        name = "fake-live"
+
+        async def answer(self, _question: str) -> RAGResponse:
+            return RAGResponse(
+                answer="fake",
+                routing_decision=QuestionType.ANALYTICAL,
+                retrieved_docs=[
+                    Document(
+                        id="doc-1",
+                        content="four factors",
+                        metadata={
+                            "retrieval_mode": "lexical_fallback",
+                            "fallback_reason": "sqlite_vec_unavailable",
+                        },
+                    )
+                ],
+            )
+
+    monkeypatch.setattr(cli, "_system_for_mode", lambda *_args: FakeSystem())
+
+    result = CliRunner().invoke(
+        main,
+        ["run", str(suite_path), "--output", str(output), "--live"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "fell back to lexical for 1 cases" in result.output
+    html = output.read_text(encoding="utf-8")
+    assert "Vector retrieval fallback" in html
+    assert "fallback: sqlite_vec_unavailable" in html
+
+
+def test_cli_run_live_warns_when_vector_fallback_has_no_docs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    suite_path = tmp_path / "suite.yaml"
+    suite_path.write_text(
+        """
+name: tiny-suite
+cases:
+  - id: case-001
+    question: What are the four factors?
+    question_type: analytical
+    relevant_doc_ids: ["doc-1"]
+""",
+        encoding="utf-8",
+    )
+    output = tmp_path / "report.html"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "_ensure_demo_data_ready", lambda _db_path: None)
+    monkeypatch.setattr(cli, "_ensure_live_data_ready", lambda _db_path: None)
+
+    class FakeSystem:
+        name = "fake-live"
+
+        async def answer(self, _question: str) -> RAGResponse:
+            return RAGResponse(
+                answer="fake",
+                routing_decision=QuestionType.ANALYTICAL,
+                retrieved_docs=[],
+                metadata={
+                    "retrieval": {
+                        "requested_mode": "vector",
+                        "retrieval_mode": "lexical_fallback",
+                        "fallback_reason": "no_vector_results",
+                        "fallback_doc_count": 0,
+                    }
+                },
+            )
+
+    monkeypatch.setattr(cli, "_system_for_mode", lambda *_args: FakeSystem())
+
+    result = CliRunner().invoke(
+        main,
+        ["run", str(suite_path), "--output", str(output), "--live"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "fell back to lexical for 1 cases" in result.output
+    html = output.read_text(encoding="utf-8")
+    assert "Vector retrieval fallback" in html
+    assert "no_vector_results" in html
 
 
 def test_cli_run_explicit_offline_overrides_keys(
@@ -890,7 +1001,7 @@ cases:
 
     assert result.exit_code == 0, result.output
     assert "Suite: demo-suite" in result.output
-    assert "deterministic offline path does not use LLM cache" in result.output
+    assert "deterministic fixture demo does not use LLM cache" in result.output
     # 4 unique categories present, target=5 → adds factual-002 to fill.
     assert "Cases: 5" in result.output
     text = output.read_text(encoding="utf-8")
