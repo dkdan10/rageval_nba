@@ -10,7 +10,6 @@
       :root {
         --blue: #1d57c8;
         --blue-soft: #eef5ff;
-        --purple: #6d35b7;
         --red: #d23c3c;
         --green: #1f9d55;
         --amber: #d98300;
@@ -25,17 +24,17 @@
       }
       body {
         margin: 0;
-        padding: 0.9rem 0;
+        padding: 1rem 0 4rem;
         color: var(--ink);
         background: #eef6ff;
-        font-size: 14px;
+        font-size: 15px;
       }
-      main.container { max-width: 1480px; }
+      main.container { max-width: 1240px; }
       h1 { margin: 0; color: #071a3d; font-size: 2rem; letter-spacing: 0; }
       h2 { margin: 0 0 0.75rem; color: #0d3d8f; font-size: 1.05rem; }
       h3 { margin: 0; font-size: 0.95rem; }
       p { line-height: 1.5; }
-      table { font-size: 0.88rem; }
+      table { font-size: 0.9rem; }
       code, pre { font-size: 0.82rem; }
       pre { white-space: pre-wrap; word-break: break-word; }
       .muted { color: var(--muted); }
@@ -79,6 +78,7 @@
         border: 1px solid var(--line);
         border-radius: 8px;
         background: #fff;
+        scroll-margin-top: 0.5rem;
       }
       .executive {
         background: linear-gradient(0deg, #fff, #fff), var(--blue-soft);
@@ -87,7 +87,7 @@
       .executive p { margin: 0.35rem 0; }
       .cards-grid {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
         gap: 1rem;
         margin-bottom: 1rem;
       }
@@ -103,19 +103,22 @@
         justify-content: space-between;
         margin-bottom: 0.8rem;
       }
-      .family-title { display: flex; gap: 0.5rem; align-items: center; font-weight: 800; }
-      .family-blue { color: var(--blue); }
-      .family-purple { color: var(--purple); }
-      .family-red { color: var(--red); }
-      .family-gray { color: var(--gray); }
+      .family-title {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        font-weight: 700;
+        color: #344054;
+      }
       .css-icon {
         display: inline-flex;
         width: 1.45rem;
         height: 1.45rem;
         align-items: center;
         justify-content: center;
-        border: 2px solid currentColor;
+        border: 1.5px solid var(--muted);
         border-radius: 50%;
+        color: var(--muted);
         font-size: 0.8rem;
         line-height: 1;
       }
@@ -147,17 +150,6 @@
         gap: 1rem;
       }
       .chart-stack { display: grid; gap: 1rem; }
-      .info-dot {
-        display: inline-flex;
-        width: 1rem;
-        height: 1rem;
-        align-items: center;
-        justify-content: center;
-        border: 1px solid #aab4c3;
-        border-radius: 50%;
-        color: #718096;
-        font-size: 0.7rem;
-      }
       .heatmap-wrap, .table-wrap { overflow-x: auto; }
       .heatmap th, .heatmap td { vertical-align: middle; }
       .heatmap td:first-child { font-weight: 700; }
@@ -169,6 +161,7 @@
         border-radius: 4px;
       }
       .heat-cell strong { display: block; font-size: 1rem; }
+      .heat-cell .heat-sub { font-size: 0.78rem; opacity: 0.8; }
       .heat-good { background: #e9f7ed; color: #16713c; }
       .heat-mid { background: #fff4d9; color: #a45e00; }
       .heat-low { background: #fde7e7; color: #b42318; }
@@ -247,31 +240,48 @@
         display: flex;
         gap: 0.75rem;
         justify-content: flex-end;
+        flex-wrap: wrap;
         margin-bottom: 0.5rem;
       }
       .case-toolbar input, .case-toolbar select { max-width: 13rem; height: 2.25rem; margin: 0; }
-      .case-index tbody tr.row-warn { background: #fffafa; }
-      .case-index tbody tr.row-ok { background: #f8fffa; }
-      .score-chip { display: inline-block; margin: 0 0.45rem 0.25rem 0; white-space: nowrap; }
-      .score-dot {
-        display: inline-block;
-        width: 0.38rem;
-        height: 0.38rem;
-        margin-left: 0.25rem;
-        border-radius: 50%;
-        vertical-align: middle;
+      .case-index td { vertical-align: middle; }
+      .case-index tbody tr.row-warn { background: #fffaf2; }
+      .case-index tbody tr.row-err { background: #fff7f7; }
+      .case-index tbody tr.row-ok { background: #fff; }
+      .score-square-row {
+        display: flex;
+        gap: 0.25rem;
+        flex-wrap: wrap;
+        align-items: center;
       }
-      .dot-good { background: var(--green); }
-      .dot-mid { background: var(--amber); }
-      .dot-low { background: var(--red); }
-      .dot-na { background: #aab4c3; }
+      .score-square {
+        display: inline-block;
+        width: 1rem;
+        height: 1rem;
+        border-radius: 3px;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+      }
+      .square-good { background: #46c97e; }
+      .square-mid { background: #f0bc59; }
+      .square-low { background: #e3675e; }
+      .square-na { background: #d9dee6; }
       .case-card {
         margin-top: 0.75rem;
         padding: 0;
-        border: 1px solid #ffc8c8;
+        border: 1px solid var(--line);
+        border-left-width: 4px;
         border-radius: 8px;
-        background: #fffafa;
+        background: #fff;
         overflow: hidden;
+      }
+      .case-card.case-ok { border-left-color: var(--green); }
+      .case-card.case-warn {
+        border-left-color: var(--amber);
+        background: #fffdf7;
+      }
+      .case-card.case-err {
+        border-left-color: var(--red);
+        background: #fffafa;
       }
       .case-card > summary {
         display: flex;
@@ -284,6 +294,7 @@
       .case-card > summary::-webkit-details-marker { display: none; }
       .case-id { color: #1d4fac; font-weight: 800; }
       .summary-spacer { flex: 1; }
+      .summary-toggle { color: var(--muted); font-size: 0.85rem; }
       .case-body { padding: 0 1rem 1rem; }
       .drill-grid {
         display: grid;
@@ -304,6 +315,7 @@
       .answer-panel { grid-column: span 1; }
       .retrieved-list { margin: 0; padding-left: 1.1rem; }
       .retrieved-list li { margin-bottom: 0.5rem; }
+      .truncation-hint { margin: 0.4rem 0 0; color: var(--muted); font-size: 0.78rem; }
       .metric-card-row {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
@@ -320,21 +332,58 @@
       .metric-result-tile .value { display: block; font-size: 1.2rem; font-weight: 800; }
       details.raw-details { margin-top: 0.4rem; }
       details.raw-details summary { color: var(--muted); cursor: pointer; font-size: 0.82rem; }
-      .footnotes { color: var(--muted); font-size: 0.82rem; }
+      details.help-popover summary {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 0.78rem;
+        font-weight: 600;
+        list-style: none;
+      }
+      details.help-popover summary::-webkit-details-marker { display: none; }
+      details.help-popover summary::after { content: "ⓘ"; font-style: normal; }
+      details.help-popover[open] summary::after { content: "✕"; }
+      details.help-popover .help-body {
+        margin: 0.45rem 0 0;
+        padding: 0.6rem 0.75rem;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--soft);
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+      .panel-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-bottom: 0.65rem;
+      }
+      .panel-header h2 { margin: 0; }
+      .footnotes { color: var(--muted); font-size: 0.85rem; }
+      .back-to-top {
+        display: inline-block;
+        margin-top: 0.5rem;
+        color: var(--muted);
+        font-size: 0.82rem;
+        text-decoration: none;
+      }
+      .back-to-top:hover { color: var(--blue); }
+      .top-anchor { float: right; }
       @media (max-width: 980px) {
         .topbar, .analytics-grid, .drill-grid { grid-template-columns: 1fr; }
-        .cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .status-strip, .case-toolbar { justify-content: flex-start; }
       }
       @media (max-width: 640px) {
-        .cards-grid { grid-template-columns: 1fr; }
         .case-toolbar { display: block; }
         .case-toolbar input, .case-toolbar select { max-width: none; margin-bottom: 0.5rem; }
       }
     </style>
   </head>
   <body>
-    <main class="container">
+    <main class="container" id="top">
       <header class="topbar">
         <div>
           <h1>{{ result.suite_name }} Report</h1>
@@ -376,7 +425,6 @@
 
       <section class="panel executive">
         <h2>Executive Summary</h2>
-        <p>{{ run_summary }}</p>
         {% for line in executive_summary_lines %}
           <p>{{ line }}</p>
         {% endfor %}
@@ -386,13 +434,12 @@
         {% for card in metric_scorecards %}
           <article class="metric-card">
             <div class="metric-card-header">
-              <div class="family-title family-{{ card.accent }}">
+              <div class="family-title">
                 <span class="css-icon">
                   {% if card.icon == "search" %}⌕{% elif card.icon == "database" %}▤{% elif card.icon == "shield" %}◇{% else %}◷{% endif %}
                 </span>
                 {{ card.family }}
               </div>
-              <span class="info-dot">i</span>
             </div>
             <div class="metric-mini-grid">
               {% for metric in card.metrics %}
@@ -412,7 +459,17 @@
 
       <section class="analytics-grid">
         <article class="panel">
-          <h2>Per-Category Metric Heatmap <span class="muted">(score)</span> <span class="info-dot">i</span></h2>
+          <div class="panel-header">
+            <h2>Per-Category Metric Heatmap <span class="muted">(score)</span></h2>
+            <details class="help-popover">
+              <summary>What is this</summary>
+              <p class="help-body">
+                Each cell shows the mean score for a metric within a category, with the
+                count of cases the metric actually scored versus the category total.
+                Empty cells mean the metric did not apply to any case in that category.
+              </p>
+            </details>
+          </div>
           <div class="heatmap-wrap">
             <table class="heatmap">
               <thead>
@@ -428,19 +485,19 @@
                   <tr>
                     <td>
                       {{ row.label }}<br>
-                      <span class="muted">(n = {{ row.case_count }})</span>
+                      <span class="muted">n = {{ row.case_count }}</span>
                     </td>
                     {% for cell in row.cells %}
                       <td>
                         {% if cell.mean is not none %}
                           <span class="heat-cell heat-{{ cell.mean|score_class|replace('score-', '') }}">
                             <strong>{{ "%.3f"|format(cell.mean) }}</strong>
-                            <span>{{ cell.n }} / {{ row.case_count }}</span>
+                            <span class="heat-sub">{{ cell.n }} of {{ row.case_count }}</span>
                           </span>
                         {% else %}
                           <span class="heat-cell heat-na">
                             <strong>—</strong>
-                            <span>n/a</span>
+                            <span class="heat-sub">n/a</span>
                           </span>
                         {% endif %}
                       </td>
@@ -451,31 +508,38 @@
             </table>
           </div>
           <div class="heat-legend">
-            <span><span class="legend-swatch swatch-good"></span>≥ 0.80 (Good)</span>
-            <span><span class="legend-swatch swatch-mid"></span>0.50–0.79 (Fair)</span>
-            <span><span class="legend-swatch swatch-low"></span>&lt; 0.50 (Poor)</span>
+            <span><span class="legend-swatch swatch-good"></span>≥ 0.85 (Good)</span>
+            <span><span class="legend-swatch swatch-mid"></span>0.60–0.84 (Fair)</span>
+            <span><span class="legend-swatch swatch-low"></span>&lt; 0.60 (Poor)</span>
             <span><span class="legend-swatch swatch-na"></span>Not applicable</span>
           </div>
         </article>
 
         <div class="chart-stack">
           <article class="panel">
-            <h2>Route Distribution <span class="muted">(n = {{ diagnostics.total_cases }})</span> <span class="info-dot">i</span></h2>
+            <h2>Route Distribution <span class="muted">(n = {{ diagnostics.total_cases }})</span></h2>
             <canvas id="route-chart" height="175"></canvas>
           </article>
           <article class="panel">
-            <h2>Metric Coverage <span class="info-dot">i</span></h2>
+            <h2>Metric Coverage</h2>
             <canvas id="coverage-chart" height="175"></canvas>
             <p class="muted">Coverage is out of {{ diagnostics.total_cases }} total cases.</p>
-          </article>
-          <article class="panel" style="display:none">
-            <canvas id="aggregate-chart" height="120"></canvas>
           </article>
         </div>
       </section>
 
       <section class="panel">
-        <h2>Notable Findings <span class="info-dot">i</span></h2>
+        <div class="panel-header">
+          <h2>Notable Findings</h2>
+          <details class="help-popover">
+            <summary>What is this</summary>
+            <p class="help-body">
+              A summary of cases worth a second look: explicit metric skips, retrieval
+              misses, refusal disagreements, zero scores, and any metric or system
+              errors. Items here are exceptions — passing cases are not listed.
+            </p>
+          </details>
+        </div>
         <div class="findings-list">
           {% if result.errors %}
             <div class="finding-row">
@@ -537,10 +601,22 @@
             </div>
           </details>
         {% endif %}
+        <a class="back-to-top" href="#top">↑ Back to top</a>
       </section>
 
       <section class="panel">
-        <h2>Case Browser <span class="muted">({{ diagnostics.total_cases }} cases)</span></h2>
+        <div class="panel-header">
+          <h2>Case Browser <span class="muted">({{ diagnostics.total_cases }} cases)</span></h2>
+          <details class="help-popover">
+            <summary>How to read this</summary>
+            <p class="help-body">
+              Each row is a test case. The colored squares in "Scores" represent
+              up to four key metrics — green for good, amber for fair, red for poor,
+              gray for not-applicable. Hover a square for the metric name and value.
+              Use the filters to narrow by type, route, or status (only-failures view).
+            </p>
+          </details>
+        </div>
         <div class="case-toolbar">
           <input id="case-search" type="search" placeholder="Search cases...">
           <select id="case-type-filter" aria-label="Filter by type">
@@ -555,6 +631,13 @@
               <option value="{{ route.key }}">{{ route.display_label }}</option>
             {% endfor %}
           </select>
+          <select id="case-status-filter" aria-label="Filter by status">
+            <option value="">All Statuses</option>
+            <option value="ok">Passing</option>
+            <option value="warn">Warnings</option>
+            <option value="err">Failures</option>
+            <option value="not-ok">Failures + warnings</option>
+          </select>
         </div>
         <div class="table-wrap">
           <table class="case-index">
@@ -563,39 +646,40 @@
                 <th>Case</th>
                 <th>Type</th>
                 <th>Route</th>
-                <th>Key Scores</th>
+                <th>Scores</th>
                 <th>Flags</th>
               </tr>
             </thead>
             <tbody>
               {% for row in case_index_rows %}
                 <tr
-                  class="{% if row.error_count or row.skip_count %}row-warn{% else %}row-ok{% endif %}"
+                  class="row-{{ row.status }}"
                   data-case-row
                   data-case-id="{{ row.case_id }}"
                   data-question="{{ row.question }}"
                   data-type="{{ row.category_key }}"
                   data-route="{{ row.route_key }}"
+                  data-status="{{ row.status }}"
                 >
                   <td><a href="#case-{{ row.case_id }}">{{ row.case_id }}</a></td>
                   <td>{{ row.category_label }}</td>
                   <td>{{ row.route_label }}</td>
                   <td>
-                    {% for score in row.key_scores %}
-                      <span class="score-chip">
-                        {{ score.metric_name }}
+                    <span class="score-square-row">
+                      {% for score in row.key_scores %}
                         {% if score.skipped or score.missing or score.value is none %}
-                          <span class="muted">—</span>
+                          {% set sq = "na" %}
+                          {% set tip = score.metric_name + ": n/a" %}
                         {% elif score.error %}
-                          <span class="score-low">error</span>
+                          {% set sq = "low" %}
+                          {% set tip = score.metric_name + ": error" %}
                         {% else %}
-                          <span class="{{ score.value|score_class }}">
-                            {{ "%.3f"|format(score.value) }}
-                          </span>
-                          <span class="score-dot dot-{{ score.value|score_class|replace('score-', '') }}"></span>
+                          {% set sq = score.value|score_class|replace("score-", "") %}
+                          {% set tip = score.metric_name + ": " + "%.3f"|format(score.value) %}
                         {% endif %}
-                      </span>
-                    {% endfor %}
+                        <span class="score-square square-{{ sq }}" title="{{ tip }}"></span>
+                      {% endfor %}
+                    </span>
                   </td>
                   <td>
                     {% for flag in row.flags %}
@@ -613,9 +697,12 @@
           {% set route_key = route_decision|route_key %}
           {% set type_key = case_result.question_type.value if case_result.question_type else "missing" %}
           {% set case_metric_errors = case_result.metric_results | selectattr("error") | list | length %}
-          <details id="case-{{ case_result.case_id }}" class="case-card"{% if loop.first %} open{% endif %}>
+          {% set case_status = case_status_by_id.get(case_result.case_id, "ok") %}
+          {% set retrieved_total = case_result.response.retrieved_docs|length %}
+          {% set sql_rows_total = case_result.response.sql_result.rows|length if case_result.response.sql_result else 0 %}
+          <details id="case-{{ case_result.case_id }}" class="case-card case-{{ case_status }}">
             <summary>
-              <span>⌄</span>
+              <span class="summary-toggle">⌄</span>
               <span class="case-id">{{ case_result.case_id }}</span>
               <span class="pill">{{ type_key|route_label }}</span>
               <span class="pill">{{ route_decision|route_display_label }}</span>
@@ -625,8 +712,7 @@
                 <span class="pill ok">Correct refusal</span>
               {% endif %}
               <span class="summary-spacer"></span>
-              <a href="#case-{{ case_result.case_id }}">View full case ↗</a>
-              <span class="muted">×</span>
+              <span class="summary-toggle">expand</span>
             </summary>
             <div class="case-body">
               <div class="drill-grid">
@@ -647,10 +733,16 @@
                     {% else %}
                       <p class="score-good">✓ SQL executed successfully</p>
                     {% endif %}
-                    <details class="raw-details">
-                      <summary>Show result rows</summary>
-                      <pre>{{ case_result.response.sql_result.rows|json_pretty }}</pre>
-                    </details>
+                    {% if sql_rows_total > 0 %}
+                      <details class="raw-details">
+                        <summary>
+                          Show {{ sql_rows_total }} result {% if sql_rows_total == 1 %}row{% else %}rows{% endif %}
+                        </summary>
+                        <pre>{{ case_result.response.sql_result.rows|json_pretty }}</pre>
+                      </details>
+                    {% else %}
+                      <p class="muted">No rows returned.</p>
+                    {% endif %}
                   {% else %}
                     <p class="muted">No SQL evidence for this case.</p>
                   {% endif %}
@@ -680,6 +772,9 @@
                         </li>
                       {% endfor %}
                     </ol>
+                    {% if retrieved_total > 3 %}
+                      <p class="truncation-hint">Showing 3 of {{ retrieved_total }} retrieved documents.</p>
+                    {% endif %}
                   {% else %}
                     <p class="muted">No retrieved documents for this case.</p>
                   {% endif %}
@@ -711,6 +806,7 @@
                   </div>
                 {% endfor %}
               </div>
+              <a class="back-to-top" href="#top">↑ Back to top</a>
             </div>
           </details>
         {% endfor %}
@@ -725,6 +821,7 @@
           <li>Skipped cases are not failures; they indicate a metric is not applicable.</li>
           <li>Unanswerable / Adversarial cases are displayed as refusal routes when routed correctly.</li>
         </ul>
+        <a class="back-to-top" href="#top">↑ Back to top</a>
       </section>
     </main>
 
@@ -752,22 +849,32 @@
           var search = document.getElementById("case-search");
           var typeFilter = document.getElementById("case-type-filter");
           var routeFilter = document.getElementById("case-route-filter");
+          var statusFilter = document.getElementById("case-status-filter");
 
           function applyCaseFilters() {
             var q = (search && search.value || "").toLowerCase();
             var type = typeFilter && typeFilter.value || "";
             var route = routeFilter && routeFilter.value || "";
+            var status = statusFilter && statusFilter.value || "";
             rows.forEach(function (row) {
               var haystack = ((row.dataset.caseId || "") + " " + (row.dataset.question || "")).toLowerCase();
               var typeOk = !type || row.dataset.type === type;
               var routeOk = !route || row.dataset.route === route;
+              var rowStatus = row.dataset.status || "";
+              var statusOk = true;
+              if (status === "not-ok") {
+                statusOk = rowStatus !== "ok";
+              } else if (status) {
+                statusOk = rowStatus === status;
+              }
               var searchOk = !q || haystack.indexOf(q) !== -1;
-              row.style.display = typeOk && routeOk && searchOk ? "" : "none";
+              row.style.display = typeOk && routeOk && statusOk && searchOk ? "" : "none";
             });
           }
           if (search) search.addEventListener("input", applyCaseFilters);
           if (typeFilter) typeFilter.addEventListener("change", applyCaseFilters);
           if (routeFilter) routeFilter.addEventListener("change", applyCaseFilters);
+          if (statusFilter) statusFilter.addEventListener("change", applyCaseFilters);
 
           if (typeof Chart === "undefined") return;
           var metricNode = document.getElementById("rageval-metric-data");
@@ -781,21 +888,6 @@
             unanswerable: "#ef5350",
             missing: "#b42318"
           };
-
-          if (metricData && document.getElementById("aggregate-chart")) {
-            new Chart(document.getElementById("aggregate-chart"), {
-              type: "bar",
-              data: {
-                labels: metricData.labels,
-                datasets: [{ label: "Score", data: metricData.scores, backgroundColor: "#1d57c8" }]
-              },
-              options: {
-                indexAxis: "y",
-                scales: { x: { min: 0, max: 1 } },
-                plugins: { legend: { display: false } }
-              }
-            });
-          }
 
           if (routeData && document.getElementById("route-chart")) {
             var bg = (routeData.keys || []).map(function (k) { return routeColors[k] || "#8a8f98"; });

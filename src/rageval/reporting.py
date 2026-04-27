@@ -90,6 +90,8 @@ def render_html_report(result: EvaluationResult) -> str:
     summaries = _metric_summaries(result)
     diagnostics = _diagnostics(result)
     failures = _failure_modes(result)
+    case_index_rows = _case_index_rows(result)
+    case_status_by_id = {row["case_id"]: row["status"] for row in case_index_rows}
     return template.render(
         result=result,
         metric_summaries=summaries,
@@ -105,7 +107,8 @@ def render_html_report(result: EvaluationResult) -> str:
         failure_modes=failures,
         notable_findings=_notable_findings(failures),
         finding_cards=_finding_cards(failures, diagnostics),
-        case_index_rows=_case_index_rows(result),
+        case_index_rows=case_index_rows,
+        case_status_by_id=case_status_by_id,
         run_metadata=_run_metadata(result),
     )
 
@@ -258,7 +261,7 @@ def _metric_scorecards(
         {
             "family": "Refusal",
             "icon": "shield",
-            "accent": "red",
+            "accent": "neutral",
             "metrics": [
                 _metric_display(summary, "refusal")
                 for summary in [_summary_by_name(summaries, "refusal")]
@@ -266,22 +269,9 @@ def _metric_scorecards(
             ],
             "hint": "Higher is better",
         },
-        {
-            "family": "Coverage",
-            "icon": "chart",
-            "accent": "gray",
-            "metrics": [
-                {
-                    "metric_name": "Total Cases",
-                    "score": None,
-                    "label": str(diagnostics["total_cases"]),
-                    "subtext": "100% evaluated",
-                    "quality": "n/a",
-                }
-            ],
-            "hint": "Coverage is out of total cases",
-        },
     ]
+    for card in cards:
+        card["accent"] = "neutral"
     return [card for card in cards if card["metrics"]]
 
 
@@ -727,6 +717,14 @@ def _case_index_rows(result: EvaluationResult) -> list[dict[str, Any]]:
         if not flags:
             flags.append({"label": "Passing", "status": "ok"})
 
+        statuses = {flag["status"] for flag in flags}
+        if "err" in statuses:
+            row_status = "err"
+        elif "warn" in statuses:
+            row_status = "warn"
+        else:
+            row_status = "ok"
+
         question = cr.question
         rows.append(
             {
@@ -741,6 +739,7 @@ def _case_index_rows(result: EvaluationResult) -> list[dict[str, Any]]:
                 "error_count": len(metric_errors),
                 "skip_count": len(metric_skips),
                 "flags": flags,
+                "status": row_status,
             }
         )
     return rows

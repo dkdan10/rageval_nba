@@ -104,11 +104,14 @@ def test_render_html_report_includes_intro_and_metric_descriptions() -> None:
     assert "Retrieval" in html
     assert "SQL / Structured" in html
     assert "Refusal" in html
-    assert "Coverage" in html
+    # Metric Coverage chart still labels the section "Coverage".
+    assert "Metric Coverage" in html
     assert "Case Browser" in html
     assert "Metric Results" in html
-    assert "1 cases completed in 1.50s" in html
-    # Coverage / skipped explanation appears in the intro
+    # The executive summary now leads with the system_name + case-count line
+    # instead of restating duration/cost (those live in the status-strip).
+    assert "demo-system run evaluated 1 cases" in html
+    # Coverage / skipped explanation appears in the methodology notes
     assert "Skipped cases are not failures" in html
     # Metric descriptions appear for known metrics
     assert "Prefix retrieval metrics evaluate article-level IDs" in html
@@ -124,10 +127,11 @@ def test_render_html_report_renders_route_badges_and_charts() -> None:
     # Chart payload data is embedded for client-side rendering
     assert "rageval-route-data" in html
     assert "rageval-metric-data" in html
-    # Route chart canvas is present
+    # Route and coverage chart canvases are present; the dead aggregate-chart
+    # canvas was removed.
     assert 'id="route-chart"' in html
-    assert 'id="aggregate-chart"' in html
     assert 'id="coverage-chart"' in html
+    assert 'id="aggregate-chart"' not in html
 
 
 def test_render_html_report_renders_explicit_metric_skips() -> None:
